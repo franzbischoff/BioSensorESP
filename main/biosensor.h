@@ -23,7 +23,7 @@ extern "C" {
 #endif
 #define I2C_TIMEOUT 0xFFFFF // fallback timeout value; a short timeout can be used for the ESP32
 // default timeout on rw operations. The default for I2C is 50ms, but 500 seems better for this library
-#define I2C_TOUTMILLIS (portTICK_PERIOD_MS * 500)
+#define I2C_TOUTMILLIS (portTICK_PERIOD_MS * 50)
 // #define CONFIG_DISABLE_HAL_LOCKS // define this to disable mutexes in the HAL
 
 // general GPIO defines for clarity

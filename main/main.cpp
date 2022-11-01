@@ -34,13 +34,6 @@
 
 #include "biosensor.h"
 
-#ifndef RESPIN
-#define RESPIN 19
-#endif
-#ifndef MFIOPIN
-#define MFIOPIN 18
-#endif
-
 static const char TAG[] = "main";
 // Reset pin, MFIO pin
 gpio_num_t resPin = (gpio_num_t)RESPIN;
@@ -54,7 +47,7 @@ int width = 411;
 // Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
 // Not every sample amount is possible with every width; check out our hookup
 // guide for more information.
-int samplrate = 100;
+int samplrate = 400;
 int pulseWidthVal;
 int sampleVal;
 
@@ -166,7 +159,7 @@ void loop() {
   ESP_LOGI(TAG, "%u, %u", body.heartRate, body.oxygen);
 
   // vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * 10));
-  vTaskDelay((portTICK_PERIOD_MS * 4));
+  vTaskDelay((portTICK_PERIOD_MS * 10));
 }
 
 #ifdef __cplusplus
