@@ -34,7 +34,7 @@ int resPin = 4;
 int mfioPin = 5;
 
 // Takes address, reset pin, and MFIO pin.
-SparkFun_Bio_Sensor_Hub bioHub(resPin, mfioPin);
+Max32664_Hub bioHub(resPin, mfioPin);
 
 bioData body;
 // ^^^^^^^^^

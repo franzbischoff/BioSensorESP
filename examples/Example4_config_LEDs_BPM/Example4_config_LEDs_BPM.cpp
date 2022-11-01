@@ -44,7 +44,7 @@ int pulseWidthVal;
 int sampleVal;
 
 // Takes address, reset pin, and MFIO pin.
-SparkFun_Bio_Sensor_Hub bioHub(resPin, mfioPin);
+Max32664_Hub bioHub(resPin, mfioPin);
 
 bioData body;
 // ^^^^^^^^^

@@ -4,6 +4,4 @@
 
 idf_component_register(SRCS "main.cpp" "biosensor.cpp")
 
-add_definitions(-DRESPIN=19 -DMFIOPIN=18
-                -D_POSIX_READER_WRITER_LOCKS -DESP_PLATFORM -DI2C_SDA=GPIO_NUM_21 -DI2C_SCL=GPIO_NUM_22
-                -D_GNU_SOURCE)
+add_definitions(-DRESPIN=19 -DMFIOPIN=18 -DI2C_SDA=GPIO_NUM_21 -DI2C_SCL=GPIO_NUM_22)

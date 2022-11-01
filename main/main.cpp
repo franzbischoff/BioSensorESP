@@ -32,29 +32,28 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "biosensor.h"
+#include "include/biosensor.h"
 
 static const char TAG[] = "main";
 // Reset pin, MFIO pin
-gpio_num_t resPin = (gpio_num_t)RESPIN;
-gpio_num_t mfioPin = (gpio_num_t)MFIOPIN;
-gpio_num_t I2C_SDA_IO = (gpio_num_t)I2C_SDA;   /*!< gpio number for I2C master data  */
-gpio_num_t I2C_SCL_IO = (gpio_num_t)I2C_SCL;   /*!< gpio number for I2C master clock */
-#define I2C_FREQ_HZ 100000U /*!< I2C master clock frequency */ // MIN 100000U, MAX 1000000U
+gpio_num_t resPin = (gpio_num_t)I2C_MAX62664_RESET_PIN;
+gpio_num_t mfioPin = (gpio_num_t)I2C_MAX62664_MFIO_PIN;
+gpio_num_t I2C_SDA_IO = (gpio_num_t)I2C_MASTER_SDA;   /*!< gpio number for I2C master data  */
+gpio_num_t I2C_SCL_IO = (gpio_num_t)I2C_MASTER_SCL;   /*!< gpio number for I2C master clock */
 
 // Possible widths: 69, 118, 215, 411us
-int width = 411;
+int width = I2C_MAX62664_PULSE_WIDTH;
 // Possible samples: 50, 100, 200, 400, 800, 1000, 1600, 3200 samples/second
 // Not every sample amount is possible with every width; check out our hookup
 // guide for more information.
-int samplrate = 400;
+int samplrate = I2C_MAX62664_SAMPLE_RATE;
 int pulseWidthVal;
 int sampleVal;
 
 TickType_t last_wake_time;
 
 // Takes address, reset pin, and MFIO pin.
-SparkFun_Bio_Sensor_Hub bioHub(resPin, mfioPin);
+Max32664_Hub bioHub(resPin, mfioPin);
 
 bioData body;
 // ^^^^^^^^^

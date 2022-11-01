@@ -37,7 +37,7 @@ int algoSens = 20; // Sensitivity (0-100%)
 int algoSamp = 10; // Number of samples to average (0-255)
 
 // Takes address, reset pin, and MFIO pin.
-SparkFun_Bio_Sensor_Hub bioHub(resPin, mfioPin);
+Max32664_Hub bioHub(resPin, mfioPin);
 
 bioData body;
 // What's this!? This is a type (like int, byte, long) unique to the SparkFun

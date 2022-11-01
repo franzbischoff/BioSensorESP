@@ -1,5 +1,5 @@
-#ifndef SPARKFUN_BIO_SENSOR_HUB_LIBRARY_H_
-#define SPARKFUN_BIO_SENSOR_HUB_LIBRARY_H_
+#ifndef MAX32664_HUB_LIBRARY_H_
+#define MAX32664_HUB_LIBRARY_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,21 +9,38 @@ extern "C" {
 // #include <cstring>
 
 // I2C Settings
+#ifndef I2C_MAX62664_ADDR
+#define I2C_MAX62664_ADDR 0x55
+#endif
 #ifndef I2C_BUFFER_LENGTH
-#define I2C_BUFFER_LENGTH 128 // Default size, if none is set using Wire::setBuffersize(size_t)
+#define I2C_BUFFER_LENGTH 64 // Default size, if none is set using Wire::setBuffersize(size_t)
 #endif
-#ifndef I2C_SDA
-#define I2C_SDA GPIO_NUM_21
+#ifndef I2C_MASTER_SDA
+#define I2C_MASTER_SDA GPIO_NUM_21
 #endif
-#ifndef I2C_SCL
-#define I2C_SCL GPIO_NUM_22
+#ifndef I2C_MASTER_SCL
+#define I2C_MASTER_SCL GPIO_NUM_22
+#endif
+#ifndef I2C_MASTER_TIMEOUT_MS
+#define I2C_MASTER_TIMEOUT_MS 1000
+#endif
+#ifndef I2C_MAX62664_RESET_PIN
+#define I2C_MAX62664_RESET_PIN GPIO_NUM_19
+#endif
+#ifndef I2C_MAX62664_MFIO_PIN
+#define I2C_MAX62664_MFIO_PIN GPIO_NUM_18
 #endif
 #ifndef I2C_FREQ_HZ
 #define I2C_FREQ_HZ 100000U
 #endif
-#define I2C_TIMEOUT 0xFFFFF // fallback timeout value; a short timeout can be used for the ESP32
-// default timeout on rw operations. The default for I2C is 50ms, but 500 seems better for this library
-#define I2C_TOUTMILLIS (portTICK_PERIOD_MS * 50)
+#ifndef I2C_MAX62664_PULSE_WIDTH
+#define I2C_MAX62664_PULSE_WIDTH 411
+#endif
+#ifndef I2C_MAX62664_SAMPLE_RATE
+#define I2C_MAX62664_SAMPLE_RATE 200
+#endif
+//#define I2C_TIMEOUT 0xFFFFF
+//#define I2C_MASTER_TOUT_CNUM_DEFAULT   (8) // fallback timeout value; a short timeout can be used for the ESP32
 // #define CONFIG_DISABLE_HAL_LOCKS // define this to disable mutexes in the HAL
 
 // general GPIO defines for clarity
@@ -60,7 +77,7 @@ extern "C" {
 #define WRITE_SET_THRESHOLD 0x01 // Index Byte for WRITE_INPUT(0x14)
 #define WRITE_EXTERNAL_TO_FIFO 0x00
 
-const uint8_t BIO_ADDRESS = 0x55;
+const uint8_t BIO_ADDRESS = I2C_MAX62664_ADDR;
 
 struct bioData {
 
@@ -325,7 +342,7 @@ enum IDENTITY_INDEX_BYTES {
 
 };
 
-class SparkFun_Bio_Sensor_Hub {
+class Max32664_Hub {
 public:
   // Variables ------------
   uint8_t bpmArr[MAXFAST_ARRAY_SIZE]{};
@@ -335,11 +352,10 @@ public:
   uint8_t bpmSenArrTwo[MAXFAST_ARRAY_SIZE + MAXFAST_EXTENDED_DATA + MAX30101_LED_ARRAY]{};
 
   // Constructor ----------
-  SparkFun_Bio_Sensor_Hub(gpio_num_t resetPin = GPIO_NUM_NC, gpio_num_t mfioPin = GPIO_NUM_NC,
-                          uint8_t address = BIO_ADDRESS);
+  Max32664_Hub(gpio_num_t resetPin = GPIO_NUM_NC, gpio_num_t mfioPin = GPIO_NUM_NC, uint8_t address = BIO_ADDRESS);
 
   // Destructor ----------
-  ~SparkFun_Bio_Sensor_Hub();
+  ~Max32664_Hub();
 
   // Functions ------------
 
@@ -719,7 +735,7 @@ private:
   size_t _txLength = 0;
   uint16_t _txAddress = 0;
 
-  uint32_t _timeOutMillis = I2C_TOUTMILLIS; // default in i2c is 50ms
+  uint32_t _timeOutMillis = I2C_MASTER_TIMEOUT_MS / portTICK_RATE_MS; // default in i2c is 50ms
   bool _nonStop = false;
 
 #ifndef CONFIG_DISABLE_HAL_LOCKS
@@ -753,7 +769,13 @@ private:
   size_t _write(const uint8_t *, size_t);
 
   // I just want to avoid using the string library
-  static size_t _strlen(const char *str) {const char *s; for (s = str; *s; ++s); return (s - str);}
+  static size_t _strlen(const char *str) {
+    const char *s;
+    for (s = str; *s; ++s) {
+      ;
+    }
+    return (s - str);
+  }
 
   inline size_t _write(const char *s) { return _write((uint8_t *)s, _strlen(s)); }
   inline size_t _write(unsigned long n) { return _write((uint8_t)n); }
@@ -849,4 +871,4 @@ private:
 }
 #endif
 
-#endif
+#endif // MAX32664_HUB_LIBRARY_H_

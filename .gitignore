@@ -47,8 +47,12 @@ docs/_static/NotoSansSC-Regular.otf
 coverage.info
 coverage_report/
 
-.vscode
-sdkconfig
-managed_components
-build
 dev
+
+**/dist/**
+build
+sdkconfig
+sdkconfig.old
+dependencies.lock
+**/managed_components/**
+.vscode*/**

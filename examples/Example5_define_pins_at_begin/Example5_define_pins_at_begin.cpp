@@ -3,7 +3,7 @@
  Heart Rate Monitor is designed to do: read heart rate and blood oxygen levels.
 
  Here the reset and mfio pins are defined at begin, instead of when the
- SparkFun_Bio_Sensor_Hub is instantiated. This makes it much easier to
+ Max32664_Hub is instantiated. This makes it much easier to
  instantiate the class using a factory method.
 
  This board requires I-squared-C connections but also connections to the reset
@@ -37,7 +37,7 @@ int resPin = 4;
 int mfioPin = 5;
 
 // The reset pin and MFIO pin will be defined at begin in this example.
-SparkFun_Bio_Sensor_Hub bioHub;
+Max32664_Hub bioHub;
 
 bioData body;
 // ^^^^^^^^^

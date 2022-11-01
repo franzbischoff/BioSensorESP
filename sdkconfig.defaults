@@ -553,6 +553,8 @@ CONFIG_HAL_ASSERTION_EQUALS_SYSTEM=y
 CONFIG_HAL_DEFAULT_ASSERTION_LEVEL=2
 # end of Hardware Abstraction Layer (HAL) and Low Level (LL)
 
+
+CONFIG_SOC_LEDC_SUPPORTED=n
 #
 # Heap memory debugging
 #
