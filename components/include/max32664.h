@@ -1,47 +1,95 @@
+/*
+  Original work from:
+
+    SparkFun Electronics
+    Date: June, 2019
+    Author: Elias Santistevan
+
+    This is an Arduino Library written for the MAXIM 32664 Biometric Sensor Hub
+    The MAX32664 Biometric Sensor Hub is in actuality a small Cortex M4 microcontroller
+    with pre-loaded firmware and algorithms used to interact with the a number of MAXIM
+    sensors; specifically the MAX30101 Pulse Oximter and Heart Rate Monitor and
+    the KX122 Accelerometer. With that in mind, this library is built to
+    communicate with a middle-person and so has a unique method of communication
+    (family, index, and write bytes) that is more simplistic than writing and reading to
+    registers, but includes a larger set of definable values.
+
+    License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+
+    Feel like supporting our work? Buy a board from SparkFun!
+
+  Adapted as ESP-IDF component by:
+
+    Francisco Bischoff
+    Date: 2022-11-02
+
+    This code was mainly rewritten to use directly the i2c driver from ESP-IDF.
+    The original code was using the Wire library from Arduino.
+    Since the time is short, I transcripted much of the Wire code, so this can
+    improved by using the i2c functions even more directly.
+    The Wire library uses semaphores everywhere, and I don't know if this is
+    really needed here, since the i2c driver may be using semaphores itself.
+    These code chunks are disabled by default, but can be enabled by defining
+    the macro CONFIG_ENABLE_HAL_LOCKS in the component config.
+*/
+
 #ifndef MAX32664_HUB_LIBRARY_H_
 #define MAX32664_HUB_LIBRARY_H_
+
+#include <driver/i2c.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <driver/i2c.h>
-// #include <cstring>
-
+#define READBYTE_FAST // use fast read byte function from Kyle Johnson
 // I2C Settings
-#ifndef I2C_MAX62664_ADDR
-#define I2C_MAX62664_ADDR 0x55
+#ifndef I2C_MASTER_FREQ_HZ
+#define I2C_MASTER_FREQ_HZ 100000U // default 100kHz; can be up to 1MHz
 #endif
 #ifndef I2C_BUFFER_LENGTH
-#define I2C_BUFFER_LENGTH 64 // Default size, if none is set using Wire::setBuffersize(size_t)
+#define I2C_BUFFER_LENGTH 64
 #endif
-#ifndef I2C_MASTER_SDA
+#ifndef CONFIG_I2C_MAX32664_ADDR
+#define I2C_MAX32664_ADDR 0x55
+#else
+#define I2C_MAX32664_ADDR CONFIG_I2C_MAX32664_ADDR
+#endif
+#ifndef CONFIG_I2C_MASTER_SDA
 #define I2C_MASTER_SDA GPIO_NUM_21
+#else
+#define I2C_MASTER_SDA CONFIG_I2C_MASTER_SDA
 #endif
-#ifndef I2C_MASTER_SCL
+#ifndef CONFIG_I2C_MASTER_SCL
 #define I2C_MASTER_SCL GPIO_NUM_22
+#else
+#define I2C_MASTER_SCL CONFIG_I2C_MASTER_SCL
 #endif
-#ifndef I2C_MASTER_TIMEOUT_MS
+#ifndef CONFIG_I2C_MASTER_TIMEOUT_MS
 #define I2C_MASTER_TIMEOUT_MS 1000
+#else
+#define I2C_MASTER_TIMEOUT_MS CONFIG_I2C_MASTER_TIMEOUT_MS
 #endif
-#ifndef I2C_MAX62664_RESET_PIN
-#define I2C_MAX62664_RESET_PIN GPIO_NUM_19
+#ifndef CONFIG_I2C_MAX32664_RESET_PIN
+#define I2C_MAX32664_RESET_PIN GPIO_NUM_19
+#else
+#define I2C_MAX32664_RESET_PIN CONFIG_I2C_MAX32664_RESET_PIN
 #endif
-#ifndef I2C_MAX62664_MFIO_PIN
-#define I2C_MAX62664_MFIO_PIN GPIO_NUM_18
+#ifndef CONFIG_I2C_MAX32664_MFIO_PIN
+#define I2C_MAX32664_MFIO_PIN GPIO_NUM_18
+#else
+#define I2C_MAX32664_MFIO_PIN CONFIG_I2C_MAX32664_MFIO_PIN
 #endif
-#ifndef I2C_FREQ_HZ
-#define I2C_FREQ_HZ 100000U
+#ifndef CONFIG_I2C_MAX32664_PULSE_WIDTH
+#define I2C_MAX32664_PULSE_WIDTH 411
+#else
+#define I2C_MAX32664_PULSE_WIDTH CONFIG_I2C_MAX32664_PULSE_WIDTH
 #endif
-#ifndef I2C_MAX62664_PULSE_WIDTH
-#define I2C_MAX62664_PULSE_WIDTH 411
+#ifndef CONFIG_I2C_MAX32664_SAMPLE_RATE
+#define I2C_MAX32664_SAMPLE_RATE 200
+#else
+#define I2C_MAX32664_SAMPLE_RATE CONFIG_I2C_MAX32664_SAMPLE_RATE
 #endif
-#ifndef I2C_MAX62664_SAMPLE_RATE
-#define I2C_MAX62664_SAMPLE_RATE 200
-#endif
-//#define I2C_TIMEOUT 0xFFFFF
-//#define I2C_MASTER_TOUT_CNUM_DEFAULT   (8) // fallback timeout value; a short timeout can be used for the ESP32
-// #define CONFIG_DISABLE_HAL_LOCKS // define this to disable mutexes in the HAL
 
 // general GPIO defines for clarity
 #define GPIO_HIGH 1
@@ -77,10 +125,9 @@ extern "C" {
 #define WRITE_SET_THRESHOLD 0x01 // Index Byte for WRITE_INPUT(0x14)
 #define WRITE_EXTERNAL_TO_FIFO 0x00
 
-const uint8_t BIO_ADDRESS = I2C_MAX62664_ADDR;
+const uint8_t BIO_ADDRESS = I2C_MAX32664_ADDR;
 
 struct bioData {
-
   uint32_t irLed;
   uint32_t redLed;
   uint32_t greenLed;
@@ -102,7 +149,6 @@ struct version {
 };
 
 struct sensorAttr {
-
   uint8_t byteWord;
   uint8_t availRegisters;
 };
@@ -115,12 +161,11 @@ enum READ_STATUS_BYTE_VALUE {
   ERR_UNAVAIL_FUNC = 0x02,
   ERR_DATA_FORMAT = 0x03,
   ERR_INPUT_VALUE = 0x04,
-  ERR_INVALID_MODE = 0x05,
+  ERR_TRY_AGAIN = 0x05,
   ERR_BTLDR_GENERAL = 0x80,
   ERR_BTLDR_CHECKSUM = 0x81,
   ERR_BTLDR_AUTH = 0x82,
   ERR_BTLDR_INVALID_APP = 0x83,
-  ERR_TRY_AGAIN = 0xFE,
   ERR_UNKNOWN = 0xFF
 };
 
@@ -128,28 +173,26 @@ enum READ_STATUS_BYTE_VALUE {
 // Write Bytes listed below. You can not reference a nestled byte without first
 // referencing it's larger category: Family Register Byte.
 enum FAMILY_REGISTER_BYTES {
-
   HUB_STATUS = 0x00,
-  SET_DEVICE_MODE,
-  READ_DEVICE_MODE,
+  SET_DEVICE_MODE = 0x01,
+  READ_DEVICE_MODE = 0x02,
   OUTPUT_MODE = 0x10,
-  READ_OUTPUT_MODE,
-  READ_DATA_OUTPUT,
-  READ_DATA_INPUT,
-  WRITE_INPUT,
+  READ_OUTPUT_MODE = 0x11, // not on the datasheet
+  READ_DATA_OUTPUT = 0x12,
+  READ_DATA_INPUT = 0x13,
+  WRITE_INPUT = 0x14, // not on the datasheet
   WRITE_REGISTER = 0x40,
-  READ_REGISTER,
-  READ_ATTRIBUTES_AFE,
-  DUMP_REGISTERS,
-  ENABLE_SENSOR,
-  READ_SENSOR_MODE,
+  READ_REGISTER = 0x41,
+  READ_ATTRIBUTES_AFE = 0x42,
+  DUMP_REGISTERS = 0x43,
+  ENABLE_SENSOR = 0x44,
+  READ_SENSOR_MODE = 0x45, // not on the datasheet
   CHANGE_ALGORITHM_CONFIG = 0x50,
-  READ_ALGORITHM_CONFIG,
-  ENABLE_ALGORITHM,
+  READ_ALGORITHM_CONFIG = 0x51,
+  ENABLE_ALGORITHM = 0x52,
   BOOTLOADER_FLASH = 0x80,
-  BOOTLOADER_INFO,
+  BOOTLOADER_INFO = 0x81,
   IDENTITY = 0xFF
-
 };
 
 // All the defines below are: 1. Index Bytes nestled in the larger category of the
@@ -158,189 +201,166 @@ enum FAMILY_REGISTER_BYTES {
 
 // Write Bytes under Family Byte: SET_DEVICE_MODE (0x01) and Index
 // Byte: 0x00.
-enum DEVICE_MODE_WRITE_BYTES {
-
-  EXIT_BOOTLOADER = 0x00,
-  RESET = 0x02,
-  ENTER_BOOTLOADER = 0x08
-
-};
+enum DEVICE_MODE_WRITE_BYTES { EXIT_BOOTLOADER = 0x00, RESET = 0x02, ENTER_BOOTLOADER = 0x08 };
 
 // Write Bytes under Family Byte: OUTPUT_MODE (0x10) and Index byte: SET_FORMAT
 // (0x00)
 enum OUTPUT_MODE_WRITE_BYTE {
-
   PAUSE = 0x00,
-  SENSOR_DATA,
-  ALGO_DATA,
-  SENSOR_AND_ALGORITHM,
-  PAUSE_TWO,
-  SENSOR_COUNTER_BYTE,
-  ALGO_COUNTER_BYTE,
-  SENSOR_ALGO_COUNTER
-
+  SENSOR_DATA = 0x01,
+  ALGO_DATA = 0x02,
+  SENSOR_AND_ALGORITHM = 0x03,
+  PAUSE_TWO = 0x04,
+  SENSOR_COUNTER_BYTE = 0x05,
+  ALGO_COUNTER_BYTE = 0x06,
+  SENSOR_ALGO_COUNTER = 0x07
 };
 
 // Index Byte under the Family Byte: READ_DATA_OUTPUT (0x12)
-enum FIFO_OUTPUT_INDEX_BYTE {
-
-  NUM_SAMPLES,
-  READ_DATA
-
-};
+enum FIFO_OUTPUT_INDEX_BYTE { NUM_SAMPLES = 0x00, READ_DATA = 0x01 };
 
 // Index Byte under the Family Byte: READ_DATA_INPUT (0x13)
 enum FIFO_EXTERNAL_INDEX_BYTE {
-
-  SAMPLE_SIZE,
-  READ_INPUT_DATA,
-  READ_SENSOR_DATA,       // For external accelerometer
-  READ_NUM_SAMPLES_INPUT, // For external accelerometer
-  READ_NUM_SAMPLES_SENSOR
-
+  SAMPLE_SIZE = 0x00,
+  READ_INPUT_MAX_SIZE = 0x01,
+  READ_SENSOR_MAX_SIZE = 0x02,   // For external accelerometer
+  READ_NUM_SAMPLES_INPUT = 0x03, // For external accelerometer
+  READ_NUM_SAMPLES_SENSOR = 0x04
 };
 
 // Index Byte under the Family Registry Byte: WRITE_REGISTER (0x40)
 enum WRITE_REGISTER_INDEX_BYTE {
-
+  WRITE_MAX86140 = 0x00,
+  WRITE_MAX30205 = 0x01,
+  WRITE_MAX30001 = 0x02,
   WRITE_MAX30101 = 0x03,
-  WRITE_ACCELEROMETER
-
+  WRITE_ACCELEROMETER = 0x04
 };
 
 // Index Byte under the Family Registry Byte: READ_REGISTER (0x41)
 enum READ_REGISTER_INDEX_BYTE {
-
+  READ_MAX86140 = 0x00,
+  READ_MAX30205 = 0x01,
+  READ_MAX30001 = 0x02,
   READ_MAX30101 = 0x03,
-  READ_ACCELEROMETER
-
+  READ_ACCELEROMETER = 0x04
 };
 
 // Index Byte under the Family Registry Byte: READ_ATTRIBUTES_AFE (0x42)
 enum GET_AFE_INDEX_BYTE {
-
+  RETRIEVE_AFE_MAX86140 = 0x00,
+  RETRIEVE_AFE_MAX30205 = 0x01,
+  RETRIEVE_AFE_MAX30001 = 0x02,
   RETRIEVE_AFE_MAX30101 = 0x03,
-  RETRIEVE_AFE_ACCELEROMETER
-
+  RETRIEVE_AFE_ACCELEROMETER = 0x04
 };
 
 // Index Byte under the Family Byte: DUMP_REGISTERS (0x43)
 enum DUMP_REGISTER_INDEX_BYTE {
 
+  DUMP_REGISTER_MAX86140 = 0x00,
+  DUMP_REGISTER_MAX30205 = 0x01,
+  DUMP_REGISTER_MAX30001 = 0x02,
   DUMP_REGISTER_MAX30101 = 0x03,
-  DUMP_REGISTER_ACCELEROMETER
+  DUMP_REGISTER_ACCELEROMETER = 0x04
 
 };
 
 // Index Byte under the Family Byte: ENABLE_SENSOR (0x44)
 enum SENSOR_ENABLE_INDEX_BYTE {
-
+  ENABLE_MAX86140 = 0x00,
+  ENABLE_MAX30205 = 0x01,
+  ENABLE_MAX30001 = 0x02,
   ENABLE_MAX30101 = 0x03,
-  ENABLE_ACCELEROMETER
-
+  ENABLE_ACCELEROMETER = 0x04
 };
 
 // Index Byte for the Family Byte: READ_SENSOR_MODE (0x45)
+// not on the datasheet
 enum READ_SENSOR_ENABLE_INDEX_BYTE {
-
+  READ_ENABLE_MAX86140 = 0x00,
+  READ_ENABLE_MAX30205 = 0x01,
+  READ_ENABLE_MAX30001 = 0x02,
   READ_ENABLE_MAX30101 = 0x03,
-  READ_ENABLE_ACCELEROMETER
-
+  READ_ENABLE_ACCELEROMETER = 0x04
 };
 
 // Index Byte under the Family Byte: CHANGE_ALGORITHM_CONFIG (0x50)
 enum ALGORITHM_CONFIG_INDEX_BYTE {
-
   SET_TARG_PERC = 0x00,
   SET_STEP_SIZE = 0x00,
   SET_SENSITIVITY = 0x00,
   SET_AVG_SAMPLES = 0x00,
-  SET_PULSE_OX_COEF = 0x02,
-  BPT_CONFIG = 0x04
-
+  WHRM_CONFIG = 0x02,
+  BPT_CONFIG = 0x04,
+  WSPO2_CONFIG = 0x05
 };
 
 // Write Bytes under the Family Byte: CHANGE_ALGORITHM_CONFIG (0x50) and the
 // Index Byte: ALGORITHM_CONFIG_INDEX_BYTE - SET_TARG_PERC
 enum ALGO_AGC_WRITE_BYTE {
-
   AGC_GAIN_ID = 0x00,
-  AGC_STEP_SIZE_ID,
-  AGC_SENSITIVITY_ID,
-  AGC_NUM_SAMP_ID,
+  AGC_STEP_SIZE_ID = 0x01,
+  AGC_SENSITIVITY_ID = 0x02,
+  AGC_NUM_SAMP_ID = 0x03,
   MAXIMFAST_COEF_ID = 0x0B
-
 };
 
 enum ALGO_BPT_WRITE_BYTE {
-
   BPT_MEDICATION = 0x00,
-  SYSTOLIC_VALUE,
-  DIASTOLIC_VALUE,
-  BPT_CALIB_DATA, // Index + 824 bytes of calibration data
+  DIASTOLIC_VALUE = 0x01,
+  SYSTOLIC_VALUE = 0x02,
+  BPT_CALIB_DATA = 0x03, // Index + 824 bytes of calibration data
+  SET_EST_DATA = 0x04,
   PATIENT_RESTING = 0x05,
-  AGC_SP02_COEFS = 0x0B
-
+  BPT_SP02_COEFS = 0x06
 };
 
 // Index Bytes under the Family Byte: READ_ALGORITHM_CONFIG (0x51)
 enum READ_ALGORITHM_INDEX_BYTE {
-
   READ_AGC_PERCENTAGE = 0x00,
   READ_AGC_STEP_SIZE = 0x00,
   READ_AGC_SENSITIVITY = 0x00,
   READ_AGC_NUM_SAMPLES = 0x00,
   READ_MAX_FAST_COEF = 0x02
-
 };
 
 // Write Bytes under the Family Byte: READ_ALGORITHM_CONFIG (0x51) and Index Byte:
 // READ_ALGORITHM_INDEX_BYTE - AGC
 enum READ_AGC_ALGO_WRITE_BYTE {
-
   READ_AGC_PERC_ID = 0x00,
-  READ_AGC_STEP_SIZE_ID,
-  READ_AGC_SENSITIVITY_ID,
-  READ_AGC_NUM_SAMPLES_ID,
+  READ_AGC_STEP_SIZE_ID = 0x01,
+  READ_AGC_SENSITIVITY_ID = 0x02,
+  READ_AGC_NUM_SAMPLES_ID = 0x03,
   READ_MAX_FAST_COEF_ID = 0x0B
-
 };
 
 // Index Byte under the Family Byte: ENABLE_ALGORITHM (0x52).
 enum ALGORITHM_MODE_ENABLE_INDEX_BYTE {
-
   ENABLE_AGC_ALGO = 0x00,
-  ENABLE_WHRM_ALGO = 0x02
-
+  ENABLE_AEC_ALGO = 0x01,
+  ENABLE_WHRM_ALGO = 0x02,
+  ENABLE_ECG_ALGO = 0x03,
+  ENABLE_BPT_ALGO = 0x04,
+  ENABLE_WSPO2_ALGO = 0x05
 };
 
 // Index Byte under the Family Byte: BOOTLOADER_FLASH (0x80).
 enum BOOTLOADER_FLASH_INDEX_BYTE {
-
   SET_INIT_VECTOR_BYTES = 0x00,
-  SET_AUTH_BYTES,
-  SET_NUM_PAGES,
-  ERASE_FLASH,
-  SEND_PAGE_VALUE
-
+  SET_AUTH_BYTES = 0x01,
+  SET_NUM_PAGES = 0x02,
+  ERASE_FLASH = 0x03,
+  SEND_PAGE_VALUE = 0x04
 };
 
 // Index Byte under the Family Byte: BOOTLOADER_INFO (0x81).
-enum BOOTLOADER_INFO_INDEX_BYTE {
-
-  BOOTLOADER_VERS = 0x00,
-  PAGE_SIZE
-
-};
+enum BOOTLOADER_INFO_INDEX_BYTE { BOOTLOADER_VERS = 0x00, PAGE_SIZE = 0x01 };
 
 // Index Byte under the Family Byte: IDENTITY (0xFF).
-enum IDENTITY_INDEX_BYTES {
+enum IDENTITY_INDEX_BYTES { READ_MCU_TYPE = 0x00, READ_SENSOR_HUB_VERS = 0x03, READ_ALGO_VERS = 0x07 };
 
-  READ_MCU_TYPE = 0x00,
-  READ_SENSOR_HUB_VERS = 0x03,
-  READ_ALGO_VERS = 0x07
-
-};
+enum MCUTYPE { MAX32625 = 0x00, MAX32664 = 0x01 };
 
 class Max32664_Hub {
 public:
@@ -359,9 +379,9 @@ public:
 
   // Functions ------------
 
-  // I2C Functions
-  esp_err_t i2c_bus_init(gpio_num_t sda = GPIO_NUM_21, gpio_num_t scl = GPIO_NUM_22, uint32_t frequency = I2C_FREQ_HZ);
-  // ~I2C Functions
+  // I2C init
+  esp_err_t i2c_bus_init(gpio_num_t sda = GPIO_NUM_NC, gpio_num_t scl = GPIO_NUM_NC);
+  // ~I2C init
 
   // Family Byte: READ_DEVICE_MODE (0x02) Index Byte: 0x00, Write Byte: 0x00
   // The following function initializes the sensor. To place the MAX32664 into
@@ -604,7 +624,7 @@ public:
   uint8_t setAlgoSamples(uint8_t);
 
   // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte:
-  // SET_PULSE_OX_COEF (0x02), Write Byte: MAXIMFAST_COEF_ID (0x0B)
+  // WHRM_CONFIG (0x02), Write Byte: MAXIMFAST_COEF_ID (0x0B)
   // This function takes three values that are used as the Sp02 coefficients.
   uint8_t setMaximFastCoef(int32_t, int32_t, int32_t);
 
@@ -694,7 +714,7 @@ public:
 
   // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
   // Write Byte: BPT_CALIB_DATA (0x03)
-  uint8_t writeBPTAlgoData(uint8_t bptCalibData[]);
+  uint8_t writeBPTAlgoData(const uint8_t bptCalibData[]);
 
   // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
   // Write Byte: BPT_CALIB_DATA (0x03)
@@ -718,13 +738,13 @@ public:
 
 private:
   // Variables -----------
-  gpio_num_t _resetPin;
-  gpio_num_t _mfioPin;
-  uint8_t _address;
+  gpio_num_t _resetPin = (gpio_num_t)I2C_MAX32664_RESET_PIN;
+  gpio_num_t _mfioPin = (gpio_num_t)I2C_MAX32664_MFIO_PIN;
+  uint8_t _address = I2C_MAX32664_ADDR;
   uint32_t _writeCoefArr[3]{};
   uint8_t _userSelectedMode;
-  uint8_t _sampleRate = 100;
-  bool _i2c_started = false;
+  uint8_t _sampleRate = I2C_MAX32664_SAMPLE_RATE;
+  bool _i2cStarted = false;
 
   size_t _bufferSize = I2C_BUFFER_LENGTH;
   uint8_t *_rxBuffer = nullptr;
@@ -738,7 +758,7 @@ private:
   uint32_t _timeOutMillis = I2C_MASTER_TIMEOUT_MS / portTICK_RATE_MS; // default in i2c is 50ms
   bool _nonStop = false;
 
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   TaskHandle_t _nonStopTask = nullptr;
   SemaphoreHandle_t _lock = nullptr;
 #endif
@@ -750,40 +770,37 @@ private:
 
   void _beginTransmission(uint16_t address);
   void _beginTransmission(uint8_t address);
-  void _beginTransmission(int address);
+  void _beginTransmission(int16_t address);
 
   uint8_t _endTransmission(bool sendStop);
   uint8_t _endTransmission();
 
-  size_t _requestFrom(uint16_t address, size_t size, bool sendStop);
-  uint8_t _requestFrom(uint16_t address, uint8_t len, bool stopBit);
-  uint8_t _requestFrom(uint16_t address, uint8_t len, uint8_t sendStop);
-  size_t _requestFrom(uint8_t address, size_t len, bool sendStop);
-  uint8_t _requestFrom(uint16_t address, uint8_t len);
-  uint8_t _requestFrom(uint8_t address, uint8_t len, uint8_t sendStop);
+  size_t _requestFrom(uint16_t address, size_t size);
+  size_t _requestFrom(uint8_t address, size_t len);
   uint8_t _requestFrom(uint8_t address, uint8_t len);
-  uint8_t _requestFrom(int address, int len, int sendStop);
-  uint8_t _requestFrom(int address, int len);
+  uint8_t _requestFrom(uint16_t address, uint8_t len);
+  uint8_t _requestFrom(int16_t address, int16_t len);
 
   size_t _write(uint8_t);
   size_t _write(const uint8_t *, size_t);
 
+  // BSP implementation of strlen
   // I just want to avoid using the string library
-  static size_t _strlen(const char *str) {
-    const char *s;
+  static size_t _strlen(const int8_t *str) {
+    const int8_t *s;
     for (s = str; *s; ++s) {
       ;
     }
     return (s - str);
   }
 
-  inline size_t _write(const char *s) { return _write((uint8_t *)s, _strlen(s)); }
-  inline size_t _write(unsigned long n) { return _write((uint8_t)n); }
-  inline size_t _write(long n) { return _write((uint8_t)n); }
-  inline size_t _write(unsigned int n) { return _write((uint8_t)n); }
-  inline size_t _write(int n) { return _write((uint8_t)n); }
+  inline size_t _write(const int8_t *s) { return _write((const uint8_t *)s, _strlen(s)); }
+  inline size_t _write(uint32_t n) { return _write((uint8_t)n); }
+  inline size_t _write(int32_t n) { return _write((uint8_t)n); }
+  inline size_t _write(uint16_t n) { return _write((uint8_t)n); }
+  inline size_t _write(int16_t n) { return _write((uint8_t)n); }
 
-  int _read();
+  int16_t _read();
 
   // ~I2C Functions------------
 
@@ -815,13 +832,13 @@ private:
   // to the registers of downward sensors and so also requires a
   // register address and register value as parameters. Again there is the write
   // of the specific bytes followed by a read to confirm positive transmission.
-  uint8_t _writeLongBytes(uint8_t, uint8_t, uint8_t, int32_t writeVal[], size_t);
+  uint8_t _writeLongBytes(uint8_t, uint8_t, uint8_t, const int32_t writeVal[], size_t);
 
   // This function sends information to the MAX32664 to specifically write values
   // to the registers of downward sensors and so also requires a
   // register address and register value as parameters. Again there is the write
   // of the specific bytes followed by a read to confirm positive transmission.
-  uint8_t _writeBytes(uint8_t, uint8_t, uint8_t, uint8_t writeVal[], size_t);
+  uint8_t _writeBytes(uint8_t, uint8_t, uint8_t, const uint8_t writeVal[], size_t);
 
   // This function handles all read commands or stated another way, all information
   // requests. It starts a request by writing the family byte, index byte, and
@@ -829,7 +846,9 @@ private:
   // information. An I-squared-C request is then issued, and the information is read and returned.
   uint8_t _readByte(uint8_t, uint8_t);
 
+  // Same as _readByte() but without the delay
   uint8_t _readByteFast(uint8_t familyByte, uint8_t indexByte);
+  // Same as _readByte() but without the delay
   uint8_t _readByteFast(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte);
 
   // This function is exactly as the one above except it accepts a Write Byte as
@@ -863,7 +882,8 @@ private:
   // except it returns multiple requested bytes.
   uint8_t _readMultipleBytes(uint8_t, uint8_t, uint8_t, size_t, uint8_t userArray[]);
 
-  // Needs comment - INCOMPLETE
+  // This functions is similar to _readMultipleBytes() except it doesn't send a write byte
+  // and all the information is read at once and returned in a uint8_t array by reference.
   uint8_t _readFillArray(uint8_t, uint8_t, uint8_t, uint8_t array[]);
 };
 

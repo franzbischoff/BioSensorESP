@@ -1,24 +1,36 @@
-// This is a personal academic project. Dear PVS-Studio, please check it.
-
-// PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
-
 /*
-  This is an Arduino Library written for the MAXIM 32664 Biometric Sensor Hub
-  The MAX32664 Biometric Sensor Hub is in actuality a small Cortex M4 microcontroller
-  with pre-loaded firmware and algorithms used to interact with the a number of MAXIM
-  sensors; specifically the MAX30101 Pulse Oximter and Heart Rate Monitor and
-  the KX122 Accelerometer. With that in mind, this library is built to
-  communicate with a middle-person and so has a unique method of communication
-  (family, index, and write bytes) that is more simplistic than writing and reading to
-  registers, but includes a larger set of definable values.
+  Original work from:
 
-  SparkFun Electronics
-  Date: June, 2019
-  Author: Elias Santistevan
-kk
-  License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+    SparkFun Electronics
+    Date: June, 2019
+    Author: Elias Santistevan
 
-  Feel like supporting our work? Buy a board from SparkFun!
+    This is an Arduino Library written for the MAXIM 32664 Biometric Sensor Hub
+    The MAX32664 Biometric Sensor Hub is in actuality a small Cortex M4 microcontroller
+    with pre-loaded firmware and algorithms used to interact with the a number of MAXIM
+    sensors; specifically the MAX30101 Pulse Oximter and Heart Rate Monitor and
+    the KX122 Accelerometer. With that in mind, this library is built to
+    communicate with a middle-person and so has a unique method of communication
+    (family, index, and write bytes) that is more simplistic than writing and reading to
+    registers, but includes a larger set of definable values.
+
+    License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+
+    Feel like supporting our work? Buy a board from SparkFun!
+
+  Adapted as ESP-IDF component by:
+
+    Francisco Bischoff
+    Date: 2022-11-02
+
+    This code was mainly rewritten to use directly the i2c driver from ESP-IDF.
+    The original code was using the Wire library from Arduino.
+    Since the time is short, I transcrypted much of the Wire code, so this can
+    improved by using the i2c functions even more directly.
+    The Wire library uses semaphores everywhere, and I don't know if this is
+    really needed here, since the i2c driver may be using semaphores itself.
+    These code chunks are disabled by default, but can be enabled by defining
+    the macro CONFIG_ENABLE_HAL_LOCKS in the component config.
 */
 
 #include "max32664.h"
@@ -29,17 +41,17 @@ static const char TAG[] = "max32664";
 Max32664_Hub::Max32664_Hub(gpio_num_t resetPin, gpio_num_t mfioPin, uint8_t address)
     : _resetPin(resetPin), _mfioPin(mfioPin), _address(address), _userSelectedMode(MODE_ONE) {
 
-  if (_mfioPin >= 0) {
+  if (_mfioPin >= GPIO_NUM_0) {
     gpio_set_direction(_mfioPin, GPIO_MODE_OUTPUT);
   }
 
-  if (_resetPin >= 0) {
+  if (_resetPin >= GPIO_NUM_0) {
     gpio_set_direction(_resetPin, GPIO_MODE_OUTPUT); // Set these pins as output
   }
 }
 
 Max32664_Hub::~Max32664_Hub() {
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   if (_lock != nullptr) {
     // acquire lock
     if (xSemaphoreTake(_lock, portMAX_DELAY) != pdTRUE) {
@@ -47,17 +59,17 @@ Max32664_Hub::~Max32664_Hub() {
       return;
     }
 #endif
-    if (_i2c_started) {
+    if (_i2cStarted) {
       ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_driver_delete(I2C_NUM_0));
     }
     _freeWireBuffer();
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
     // release lock
     xSemaphoreGive(_lock);
   }
 #endif
 
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   if (_lock != nullptr) {
     vSemaphoreDelete(_lock);
   }
@@ -67,14 +79,22 @@ Max32664_Hub::~Max32664_Hub() {
 /**
  * @brief i2c master initialization
  */
-esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl, uint32_t frequency) {
+esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl) {
 
   //  A call to i2c_bus_init should occur in sketch
   //  to avoid multiple begins with other sketches.
 
   esp_err_t res = ESP_OK;
 
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+  if (sda == GPIO_NUM_NC) {
+    sda = (gpio_num_t)I2C_MASTER_SDA;
+  }
+
+  if (scl == GPIO_NUM_NC) {
+    scl = (gpio_num_t)I2C_MASTER_SCL;
+  }
+
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   if (_lock == nullptr) {
     _lock = xSemaphoreCreateMutex();
     if (_lock == nullptr) {
@@ -90,7 +110,7 @@ esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl, uint32_t fr
   }
 #endif
 
-  if (_i2c_started) {
+  if (_i2cStarted) {
     ESP_LOGW(TAG, "Bus already started in Master Mode.");
     return ESP_OK;
   }
@@ -102,11 +122,11 @@ esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl, uint32_t fr
 
   i2c_config_t conf;
   conf.mode = I2C_MODE_MASTER;
-  conf.sda_io_num = sda;
+  conf.sda_io_num = (int)sda;
   conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-  conf.scl_io_num = scl;
+  conf.scl_io_num = (int)scl;
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-  conf.master.clk_speed = frequency;
+  conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
   conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
 
   res = i2c_param_config(I2C_NUM_0, &conf);
@@ -118,14 +138,13 @@ esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl, uint32_t fr
   res = i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0);
 
   if (res == ESP_OK) {
-    // i2c_set_timeout(I2C_NUM_0, I2C_TIMEOUT);
-    _i2c_started = true;
+    _i2cStarted = true;
   }
 
-  if (!_i2c_started) {
+  if (!_i2cStarted) {
     _freeWireBuffer();
   }
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   // release lock
   xSemaphoreGive(_lock);
 #endif
@@ -136,14 +155,14 @@ esp_err_t Max32664_Hub::i2c_bus_init(gpio_num_t sda, gpio_num_t scl, uint32_t fr
 bool Max32664_Hub::_allocateWireBuffer() {
   // or both buffer can be allocated or none will be
   if (_rxBuffer == nullptr) {
-    _rxBuffer = (uint8_t *)malloc(_bufferSize);
+    _rxBuffer = static_cast<uint8_t *>(malloc(_bufferSize));
     if (_rxBuffer == nullptr) {
       ESP_LOGE(TAG, "Can't allocate memory for I2C_%d rxBuffer", I2C_NUM_0);
       return false;
     }
   }
   if (_txBuffer == nullptr) {
-    _txBuffer = (uint8_t *)malloc(_bufferSize);
+    _txBuffer = static_cast<uint8_t *>(malloc(_bufferSize));
     if (_txBuffer == nullptr) {
       ESP_LOGE(TAG, "Can't allocate memory for I2C_%d txBuffer", I2C_NUM_0);
       _freeWireBuffer(); // free rxBuffer for safety!
@@ -174,18 +193,18 @@ void Max32664_Hub::_freeWireBuffer() {
 // which mode the IC is in.
 uint8_t Max32664_Hub::begin(gpio_num_t resetPin, gpio_num_t mfioPin) {
 
-  if (resetPin >= 0) {
+  if (resetPin >= GPIO_NUM_0) {
     _resetPin = resetPin;
     gpio_set_direction(_resetPin, GPIO_MODE_OUTPUT); // Set the pin as output
   }
 
-  if (mfioPin >= 0) {
+  if (mfioPin >= GPIO_NUM_0) {
     _mfioPin = mfioPin;
     gpio_set_direction(_mfioPin, GPIO_MODE_OUTPUT); // Set the pin as output
   }
 
-  if ((_resetPin < 0) || (_mfioPin < 0)) { // Bail if the pins have still not been defined
-    return ERR_UNKNOWN;                           // Return ERR_UNKNOWN
+  if ((_resetPin == GPIO_NUM_NC) || (_mfioPin == GPIO_NUM_NC)) { // Bail if the pins have still not been defined
+    return ERR_UNKNOWN;                                          // Return ERR_UNKNOWN
   }
 
   gpio_set_level(_resetPin, GPIO_HIGH);
@@ -213,22 +232,18 @@ uint8_t Max32664_Hub::begin(gpio_num_t resetPin, gpio_num_t mfioPin) {
 // that the board is in bootloader mode.
 uint8_t Max32664_Hub::beginBootloader(gpio_num_t resetPin, gpio_num_t mfioPin) {
 
-  // _i2cPort = &wirePort;
-  //  _begin(); A call to Wire.begin should occur in sketch
-  //  to avoid multiple begins with other sketches.
-
-  if (resetPin >= 0) {
+  if (resetPin >= GPIO_NUM_0) {
     _resetPin = resetPin;
     gpio_set_direction(_resetPin, GPIO_MODE_OUTPUT); // Set the pin as output
   }
 
-  if (mfioPin >= 0) {
+  if (mfioPin >= GPIO_NUM_0) {
     _mfioPin = mfioPin;
     gpio_set_direction(_mfioPin, GPIO_MODE_OUTPUT); // Set the pin as output
   }
 
-  if ((_resetPin < 0) || (_mfioPin < 0)) { // Bail if the pins have still not been defined
-    return ERR_UNKNOWN;                           // Return ERR_UNKNOWN
+  if ((_resetPin == GPIO_NUM_NC) || (_mfioPin == GPIO_NUM_NC)) { // Bail if the pins have still not been defined
+    return ERR_UNKNOWN;                                          // Return ERR_UNKNOWN
   }
 
   gpio_set_level(_mfioPin, GPIO_LOW);
@@ -248,8 +263,13 @@ uint8_t Max32664_Hub::beginBootloader(gpio_num_t resetPin, gpio_num_t mfioPin) {
 // The following function checks the status of the FIFO.
 uint8_t Max32664_Hub::readSensorHubStatus() {
 
+#if defined(READBYTE_FAST)
   uint8_t const status = _readByteFast(0x00, 0x00); // Just family and index byte.
-  return status;                                    // Will return 0x00
+#else
+  uint8_t const status = _readByte(0x00, 0x00); // Just family and index byte.
+#endif
+
+  return status; // Will return 0x00
 }
 
 // This function sets very basic settings to get sensor and biometric data.
@@ -786,11 +806,11 @@ uint16_t Max32664_Hub::readAdcRange() {
   }*/
 }
 
-// Family Byte: SET_DEVICE_MODE (0x01), Index Byte: 0x01, Write Byte: 0x00
+// Family Byte: SET_DEVICE_MODE (0x01), Index Byte: 0x00, Write Byte: 0x00; 0x02; 0x08
 // The following function is an alternate way to set the mode of the of
 // MAX32664. It can take three parameters: Enter and Exit Bootloader Mode, as
 // well as reset.
-// INCOMPLETE
+// Page 14
 uint8_t Max32664_Hub::setOperatingMode(uint8_t selection) {
 
   // Must be one of the three....
@@ -805,7 +825,8 @@ uint8_t Max32664_Hub::setOperatingMode(uint8_t selection) {
   }
 
   // Here we'll check if the board made it into Bootloader mode...
-  uint8_t const responseByte = _readByte(READ_DEVICE_MODE, 0x00); // 0x00 only possible Index Byte
+  // responses are 0x00: Application operating mode. 0x08: Bootloader operating mode
+  uint8_t const responseByte = _readByte(READ_DEVICE_MODE, 0x00);
   return responseByte; // This is in fact the status byte, need second returned byte - bootloader mode
 }
 
@@ -930,11 +951,11 @@ uint8_t Max32664_Hub::setFifoThreshold(uint8_t intThresh) {
 // This function returns the number of samples available in the FIFO.
 uint8_t Max32664_Hub::numSamplesOutFifo() {
 
-  //
-
+#if defined(READBYTE_FAST)
   uint8_t const sampAvail = _readByteFast(READ_DATA_OUTPUT, NUM_SAMPLES);
-
-  //
+#else
+  uint8_t const sampAvail = _readByte(READ_DATA_OUTPUT, NUM_SAMPLES);
+#endif
 
   return sampAvail;
 }
@@ -1129,7 +1150,7 @@ uint8_t Max32664_Hub::setAlgoSamples(uint8_t avg) {
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte:
-// SET_PULSE_OX_COEF (0x02), Write Byte: MAXIMFAST_COEF_ID (0x0B)
+// WHRM_CONFIG (0x02), Write Byte: MAXIMFAST_COEF_ID (0x0B)
 // This function takes three values that are used as the Sp02 coefficients.
 // These three values are multiplied by 100,000;
 // default values are in order: 159584, -3465966, and 11268987.
@@ -1139,7 +1160,7 @@ uint8_t Max32664_Hub::setMaximFastCoef(int32_t coef1, int32_t coef2, int32_t coe
   int32_t coefArr[numCoefVals] = {coef1, coef2, coef3};
 
   uint8_t const statusByte =
-      _writeLongBytes(CHANGE_ALGORITHM_CONFIG, SET_PULSE_OX_COEF, MAXIMFAST_COEF_ID, coefArr, numCoefVals);
+      _writeLongBytes(CHANGE_ALGORITHM_CONFIG, WHRM_CONFIG, MAXIMFAST_COEF_ID, coefArr, numCoefVals);
   if (statusByte != SUCCESS) {
     return statusByte;
   } else {
@@ -1369,7 +1390,7 @@ uint8_t Max32664_Hub::isPatientBPMedication() {
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: SYSTOLIC_VALUE (0x01)
+// Write Byte: SYSTOLIC_VALUE (0x02)
 uint8_t Max32664_Hub::writeSystolicVals(uint8_t sysVal1, uint8_t sysVal2, uint8_t sysVal3) {
 
   const size_t numSysVals = 3;
@@ -1380,7 +1401,7 @@ uint8_t Max32664_Hub::writeSystolicVals(uint8_t sysVal1, uint8_t sysVal2, uint8_
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: SYSTOLIC_VALUE (0x01)
+// Write Byte: SYSTOLIC_VALUE (0x02)
 uint8_t Max32664_Hub::readSystolicVals(uint8_t userArray[]) {
 
   const size_t numSysVals = 3;
@@ -1390,7 +1411,7 @@ uint8_t Max32664_Hub::readSystolicVals(uint8_t userArray[]) {
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: DIASTOLIC_VALUE (0x02)
+// Write Byte: DIASTOLIC_VALUE (0x01)
 uint8_t Max32664_Hub::writeDiastolicVals(uint8_t diasVal1, uint8_t diasVal2, uint8_t diasVal3) {
 
   const size_t numDiasVals = 3;
@@ -1401,7 +1422,7 @@ uint8_t Max32664_Hub::writeDiastolicVals(uint8_t diasVal1, uint8_t diasVal2, uin
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: DIASTOLIC_VALUE (0x02)
+// Write Byte: DIASTOLIC_VALUE (0x01)
 uint8_t Max32664_Hub::readDiastolicVals(uint8_t userArray[]) {
 
   const size_t numDiasVals = 3;
@@ -1412,7 +1433,7 @@ uint8_t Max32664_Hub::readDiastolicVals(uint8_t userArray[]) {
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
 // Write Byte: BPT_CALIB_DATA (0x03)
-uint8_t Max32664_Hub::writeBPTAlgoData(uint8_t bptCalibData[]) {
+uint8_t Max32664_Hub::writeBPTAlgoData(const uint8_t bptCalibData[]) {
 
   const size_t numCalibVals = 824;
   uint8_t const status = _writeBytes(CHANGE_ALGORITHM_CONFIG, BPT_CONFIG, BPT_CALIB_DATA, bptCalibData, numCalibVals);
@@ -1450,22 +1471,22 @@ uint8_t Max32664_Hub::isPatientResting() {
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: AGC_SP02_COEFS (0x0B)
+// Write Byte: BPT_SP02_COEFS (0x06)
 uint8_t Max32664_Hub::writeSP02AlgoCoef(int32_t intA, int32_t intB, int32_t intC) {
 
   const size_t numCoefVals = 3;
   int32_t coefVals[numCoefVals] = {intA, intB, intC};
-  uint8_t const status = _writeLongBytes(CHANGE_ALGORITHM_CONFIG, BPT_CONFIG, AGC_SP02_COEFS, coefVals, numCoefVals);
+  uint8_t const status = _writeLongBytes(CHANGE_ALGORITHM_CONFIG, BPT_CONFIG, BPT_SP02_COEFS, coefVals, numCoefVals);
   return status;
 }
 
 // Family Byte: CHANGE_ALGORITHM_CONFIG (0x50), Index Byte: BPT_CONFIG (0x04),
-// Write Byte: AGC_SP02_COEFS (0x0B)
+// Write Byte: BPT_SP02_COEFS (0x06)
 uint8_t Max32664_Hub::readSP02AlgoCoef(
     int32_t userArray[]) { // Have the user provide their own array here and pass the pointer to it
 
   const size_t numOfReads = 3;
-  uint8_t const status = _readMultipleBytes(CHANGE_ALGORITHM_CONFIG, BPT_CONFIG, AGC_SP02_COEFS, numOfReads, userArray);
+  uint8_t const status = _readMultipleBytes(CHANGE_ALGORITHM_CONFIG, BPT_CONFIG, BPT_SP02_COEFS, numOfReads, userArray);
   return status;
 }
 
@@ -1473,7 +1494,7 @@ uint8_t Max32664_Hub::readSP02AlgoCoef(
 
 void Max32664_Hub::_beginTransmission(uint16_t address) {
 
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   if (_nonStop && _nonStopTask == xTaskGetCurrentTaskHandle()) {
     ESP_LOGE(TAG, "Unfinished Repeated Start transaction! Expected requestFrom, not beginTransmission! Clearing...");
     // release lock
@@ -1490,11 +1511,9 @@ void Max32664_Hub::_beginTransmission(uint16_t address) {
   _txLength = 0;
 }
 
-void Max32664_Hub::_beginTransmission(int address) { _beginTransmission(static_cast<uint16_t>(address)); }
+void Max32664_Hub::_beginTransmission(int16_t address) { _beginTransmission(static_cast<uint16_t>(address)); }
 
-void Max32664_Hub::_beginTransmission(uint8_t address) {
-  _beginTransmission(static_cast<uint16_t>(address));
-}
+void Max32664_Hub::_beginTransmission(uint8_t address) { _beginTransmission(static_cast<uint16_t>(address)); }
 
 uint8_t Max32664_Hub::_endTransmission() { return _endTransmission(true); }
 
@@ -1516,14 +1535,14 @@ uint8_t Max32664_Hub::_endTransmission(bool sendStop) {
   esp_err_t err = ESP_OK;
   if (sendStop) {
     err = i2c_master_write_to_device(I2C_NUM_0, _txAddress, _txBuffer, _txLength, _timeOutMillis);
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
     // release lock
     xSemaphoreGive(_lock);
 #endif
   } else {
     // mark as non-stop
     _nonStop = true;
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
     _nonStopTask = xTaskGetCurrentTaskHandle();
 #endif
   }
@@ -1554,15 +1573,15 @@ size_t Max32664_Hub::_write(uint8_t data) {
 
 size_t Max32664_Hub::_write(const uint8_t *data, size_t quantity) {
   for (size_t i = 0; i < quantity; ++i) {
-    if (!_write(data[i])) {
+    if (_write(data[i]) == 0) {
       return i;
     }
   }
   return quantity;
 }
 
-int Max32664_Hub::_read() {
-  int value = -1;
+int16_t Max32664_Hub::_read() {
+  int16_t value = -1;
   if (_rxBuffer == nullptr) {
     ESP_LOGE(TAG, "NULL RX buffer pointer");
     return value;
@@ -1573,14 +1592,14 @@ int Max32664_Hub::_read() {
   return value;
 }
 
-size_t Max32664_Hub::_requestFrom(uint16_t address, size_t size, bool sendStop) {
+size_t Max32664_Hub::_requestFrom(uint16_t address, size_t size) {
   if (_rxBuffer == nullptr || _txBuffer == nullptr) {
     ESP_LOGE(TAG, "NULL buffer pointer");
     return 0;
   }
   esp_err_t err = ESP_OK;
   if (_nonStop
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
       && _nonStopTask == xTaskGetCurrentTaskHandle()
 #endif
   ) {
@@ -1597,7 +1616,7 @@ size_t Max32664_Hub::_requestFrom(uint16_t address, size_t size, bool sendStop) 
       ESP_LOGE(TAG, "i2c_master_write_read_device returned Error %d", err);
     }
   } else {
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
     // acquire lock
     if (_lock == nullptr || xSemaphoreTake(_lock, portMAX_DELAY) != pdTRUE) {
       ESP_LOGE(TAG, "could not acquire lock");
@@ -1608,53 +1627,36 @@ size_t Max32664_Hub::_requestFrom(uint16_t address, size_t size, bool sendStop) 
     _rxLength = 0;
     err = i2c_master_read_from_device(I2C_NUM_0, address, _rxBuffer, size, _timeOutMillis);
     if (err) {
-      ESP_LOGE(TAG, "i2cRead returned Error %d", err);
+      if (err == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "i2c_master_read_from_device returned Timeout");
+      } else {
+        ESP_LOGE(TAG, "i2c_master_read_from_device returned Error %d", err);
+      }
     } else {
       _rxLength = size;
     }
   }
-#ifndef CONFIG_DISABLE_HAL_LOCKS
+#if defined(CONFIG_ENABLE_HAL_LOCKS)
   // release lock
   xSemaphoreGive(_lock);
 #endif
   return _rxLength;
 }
 
-size_t Max32664_Hub::_requestFrom(uint8_t address, size_t len, bool sendStop) {
-  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len), static_cast<bool>(sendStop));
-}
-
-uint8_t Max32664_Hub::_requestFrom(uint8_t address, uint8_t len, uint8_t sendStop) {
-  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len), static_cast<bool>(sendStop));
-}
-
-uint8_t Max32664_Hub::_requestFrom(uint16_t address, uint8_t len, uint8_t sendStop) {
-  return _requestFrom(address, static_cast<size_t>(len), static_cast<bool>(sendStop));
-}
-
-/* Added to match the Arduino function definition:
- * https://github.com/arduino/ArduinoCore-API/blob/173e8eadced2ad32eeb93bcbd5c49f8d6a055ea6/api/HardwareI2C.h#L39 See:
- * https://github.com/arduino-libraries/ArduinoECCX08/issues/25
- */
-uint8_t Max32664_Hub::_requestFrom(uint16_t address, uint8_t len, bool stopBit) {
-  return _requestFrom((uint16_t)address, (size_t)len, stopBit);
+size_t Max32664_Hub::_requestFrom(uint8_t address, size_t len) {
+  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len));
 }
 
 uint8_t Max32664_Hub::_requestFrom(uint8_t address, uint8_t len) {
-  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len), true);
+  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len));
 }
 
 uint8_t Max32664_Hub::_requestFrom(uint16_t address, uint8_t len) {
-  return _requestFrom(address, static_cast<size_t>(len), true);
+  return _requestFrom(address, static_cast<size_t>(len));
 }
 
-uint8_t Max32664_Hub::_requestFrom(int address, int len) {
-  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len), true);
-}
-
-uint8_t Max32664_Hub::_requestFrom(int address, int len, int sendStop) {
-  return static_cast<uint8_t>(
-      _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len), static_cast<bool>(sendStop)));
+uint8_t Max32664_Hub::_requestFrom(int16_t address, int16_t len) {
+  return _requestFrom(static_cast<uint16_t>(address), static_cast<size_t>(len));
 }
 
 // This function uses the given family, index, and write byte to enable
@@ -1721,8 +1723,7 @@ uint8_t Max32664_Hub::_writeByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
 // to the registers of downward sensors and so also requires a
 // register address and register value as parameters. Again there is the write
 // of the specific bytes followed by a read to confirm positive transmission.
-uint8_t Max32664_Hub::_writeByte(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte,
-                                            uint8_t writeVal) {
+uint8_t Max32664_Hub::_writeByte(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte, uint8_t writeVal) {
 
   _beginTransmission(_address);
   _write(familyByte);
@@ -1743,7 +1744,7 @@ uint8_t Max32664_Hub::_writeByte(uint8_t familyByte, uint8_t indexByte, uint8_t 
 // register address and register value as parameters. Again there is the write
 // of the specific bytes followed by a read to confirm positive transmission.
 uint8_t Max32664_Hub::_writeLongBytes(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte,
-                                                 int32_t writeVal[], const size_t size) {
+                                      const int32_t writeVal[], const size_t size) {
 
   _beginTransmission(_address);
   _write(familyByte);
@@ -1770,8 +1771,8 @@ uint8_t Max32664_Hub::_writeLongBytes(uint8_t familyByte, uint8_t indexByte, uin
 // to the registers of downward sensors and so also requires a
 // register address and register value as parameters. Again there is the write
 // of the specific bytes followed by a read to confirm positive transmission.
-uint8_t Max32664_Hub::_writeBytes(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte,
-                                             uint8_t writeVal[], const size_t size) {
+uint8_t Max32664_Hub::_writeBytes(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte, const uint8_t writeVal[],
+                                  const size_t size) {
 
   _beginTransmission(_address);
   _write(familyByte);
@@ -1885,8 +1886,9 @@ uint8_t Max32664_Hub::_readByte(uint8_t familyByte, uint8_t indexByte, uint8_t w
   return returnByte; // If good then return the actual byte.
 }
 
-uint8_t Max32664_Hub::_readFillArray(uint8_t familyByte, uint8_t indexByte, uint8_t numOfReads,
-                                                uint8_t array[]) {
+// This functions is similar to _readMultipleBytes() except it doesn't send a write byte
+// and all the information is read at once and returned in a uint8_t array by reference.
+uint8_t Max32664_Hub::_readFillArray(uint8_t familyByte, uint8_t indexByte, uint8_t numOfReads, uint8_t array[]) {
 
   uint8_t statusByte;
 
@@ -1895,7 +1897,7 @@ uint8_t Max32664_Hub::_readFillArray(uint8_t familyByte, uint8_t indexByte, uint
   _write(indexByte);
   _endTransmission();
 
-  vTaskDelay(portTICK_PERIOD_MS * 1);
+  // vTaskDelay(portTICK_PERIOD_MS * 1);
 
   _requestFrom(_address, static_cast<uint8_t>(numOfReads + sizeof(statusByte)));
   statusByte = _read();
@@ -1949,7 +1951,7 @@ uint16_t Max32664_Hub::_readIntByte(uint8_t familyByte, uint8_t indexByte, uint8
 // and the information is read. This function is very similar to the one above
 // except it returns three uint32_t bytes instead of one.
 uint8_t Max32664_Hub::_readMultipleBytes(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte,
-                                                    const size_t numOfReads, int32_t userArray[]) {
+                                         const size_t numOfReads, int32_t userArray[]) {
 
   uint8_t statusByte;
 
@@ -1982,7 +1984,7 @@ uint8_t Max32664_Hub::_readMultipleBytes(uint8_t familyByte, uint8_t indexByte, 
 // and the information is read. This function is very similar to the one above
 // except it returns three uint32_t bytes instead of one.
 uint8_t Max32664_Hub::_readMultipleBytes(uint8_t familyByte, uint8_t indexByte, uint8_t writeByte,
-                                                    const size_t numOfReads, uint8_t userArray[]) {
+                                         const size_t numOfReads, uint8_t userArray[]) {
 
   uint8_t statusByte;
 
