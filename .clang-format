@@ -130,6 +130,6 @@ Standard: c++11
 StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
-TabWidth: 2
+TabWidth: 8
 UseCRLF: false
 UseTab: Never
