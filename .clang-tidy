@@ -1,3 +1,14 @@
+# Naming
+# Class and struct names shall be written in CamelCase with a capital letter as beginning. Member variables and methods shall be in snake_case.
+
+# Namespaces shall be in lower snake_case.
+
+# Templates are specified in the line above the function declaration.
+
+# Interfaces in terms of Object-Oriented Programming shall be named without the suffix ...Interface. Later, this makes it easier to extract interfaces from normal classes and vice versa without making a breaking change.
+
+# First put constructors/destructors, then member functions, then member variables.
+
 ---
 AnalyzeTemporaryDtors: false
 CheckOptions:
@@ -23,6 +34,8 @@ CheckOptions:
     value: "NULL"
   - key: readability-identifier-naming.LocalVariableCase
     value: lower_case
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.StructCase
@@ -35,8 +48,14 @@ CheckOptions:
     value: UPPER_CASE
   - key: readability-identifier-naming.StaticVariableCase
     value: lower_case
+  - key: readability-identifier-naming.StaticVariableSuffix
+    value: s_
   - key: readability-identifier-naming.GlobalConstantCase
     value: UPPER_CASE
+  - key: readability-identifier-naming.TypeDefCase
+    value: lower_case
+  - key: readability-identifier-naming.TypeDefSuffix
+    value: _t
   - key: readability-identifier-naming.ParameterCase
     value: lower_case
   - key: readability-identifier-naming.PrivateMemberCase
