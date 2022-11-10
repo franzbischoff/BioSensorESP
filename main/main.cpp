@@ -16,7 +16,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <freertos/ringbuf.h>
-#include <max32664.h>
+#include <max32664.hpp>
 
 #define SAMPLING_HZ SAMPLING_RATE_HZ
 #define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_HZ)
@@ -168,8 +168,8 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     const float l_alpha = powf(eps_f, 1.0F / WANDER_FILTER);
 
     // Takes address, reset pin, and MFIO pin.
-    Max32664_Hub bio_hub(res_pin, mfio_pin);
-    bioData body;
+    maxim::Max32664Hub bio_hub(res_pin, mfio_pin);
+    maxim::BioData body;
 
     uint32_t ir_led;
     bool sensor_started = false;
@@ -181,21 +181,21 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
 
     ESP_ERROR_CHECK(bio_hub.i2c_bus_init(i2c_sda, i2c_scl));
 
-    if (bio_hub.begin() == SUCCESS) { // Zero errors!
+    if (bio_hub.begin() == maxim::SUCCESS) { // Zero errors!
         ESP_LOGI(TAG, "Sensor started!");
     } else {
         ESP_LOGE(TAG, "Sensor not started!");
         esp_restart();
     }
 
-    if (bio_hub.configSensor() == SUCCESS) {
+    if (bio_hub.config_sensor() == maxim::SUCCESS) {
         ESP_LOGI(TAG, "Sensor configured!");
     } else {
         ESP_LOGE(TAG, "Sensor not configured!");
         esp_restart();
     }
 
-    if (bio_hub.setPulseWidth(width) == SUCCESS && bio_hub.setSampleRate(samples) == SUCCESS) {
+    if (bio_hub.set_pulse_width(width) == maxim::SUCCESS && bio_hub.set_sample_rate(samples) == maxim::SUCCESS) {
         ESP_LOGI(TAG, "Pulse width and sample rate set!");
     } else {
         ESP_LOGE(TAG, "Pulse width and sample rate not set!");
@@ -215,8 +215,8 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
 
 #ifndef FILE_DATA
-        body = bio_hub.readSensor();
-        ir_led = body.irLed;
+        body = bio_hub.read_sensor();
+        ir_led = body.ir_led;
 
         if (!sensor_started) {
             if (ir_led == 0) {

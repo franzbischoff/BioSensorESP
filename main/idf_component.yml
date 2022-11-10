@@ -3,5 +3,4 @@ description: "The first basic example"
 dependencies:
   idf: ">=4.1.0"
   joltwallet/littlefs: ">=1.5.0"
-  max32664-hub:
-    git: https://github.com/franzbischoff/esp-idf-max32664-hub
+  franzbischoff/max32664-hub: ">=0.9.3"

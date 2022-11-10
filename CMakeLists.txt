@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 set(ENV{IDF_MAINTAINER} 1)
-set(ENV{IDF_TOOLCHAIN} clang)
+# set(ENV{IDF_TOOLCHAIN} clang)
 
 # set(ENV{CMAKE_C_COMPILER_ID} "Clang")
 # set(CMAKE_C_COMPILER xtensa-esp32-elf-clang)
