@@ -1,5 +1,5 @@
-version: "0.9.0"
-description: "The first basic example"
+version: 0.9.0
+description: The first basic example
 dependencies:
   idf: ">=4.1.0"
   joltwallet/littlefs: ">=1.5.0"

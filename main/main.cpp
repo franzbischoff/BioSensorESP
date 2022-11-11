@@ -3,20 +3,19 @@
 // PVS-Studio Static Code Analyzer for C, C++, C#, and Java: https://pvs-studio.com
 
 #include "settings.h"
-#include "mpx/mpx.hpp"
 
-#include <esp_log.h>
-#include <esp_system.h>
-#include <esp_littlefs.h>
-#include <esp_spi_flash.h>
-#include <esp32/spiram.h>
 #include <cmath>
-
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
-#include <freertos/ringbuf.h>
-#include <max32664.hpp>
+#include "esp32/spiram.h"
+#include "esp_littlefs.h"
+#include "esp_log.h"
+#include "esp_spi_flash.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/ringbuf.h"
+#include "freertos/task.h"
+#include "max32664.hpp"
+#include "mpx/mpx.hpp"
 
 #define SAMPLING_HZ SAMPLING_RATE_HZ
 #define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_HZ)
@@ -37,7 +36,7 @@
 [[noreturn]] void task_compute(void *pv_parameters);
 [[noreturn]] void task_read_signal(void *pv_parameters);
 
-enum CORES { CORE_0 = 0x00, CORE_1 = 0x01 };
+typedef enum { CORE_0 = 0x00, CORE_1 = 0x01 } cores_t;
 
 //>> log tag
 static const char TAG[] = "main";
@@ -68,7 +67,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
         buffer[i] = 0.0F;
     }
 
-    MatrixProfile::Mpx mpx(WINDOW_SIZE, 0.5F, 0U, HIST_SIZE);
+    mp::Mpx mpx(WINDOW_SIZE, 0.5F, 0U, HIST_SIZE);
     mpx.prune_buffer();
 
     for (;;) // -H776 A Task shall never return or exit.
