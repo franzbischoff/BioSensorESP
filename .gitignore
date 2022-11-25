@@ -52,6 +52,7 @@ dev
 
 **/.component_hash
 **/dist/**
+docs/html
 build
 sdkconfig
 sdkconfig.old
