@@ -3,7 +3,8 @@
 {
   "name": "ESP-IDF QEMU",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "target": "build-44"
   },
   // Add the IDs of extensions you want installed when the container is created.
   "extensions": [
@@ -70,5 +71,6 @@
     "C_Cpp.formatting": "clangFormat"
   },
   "runArgs": ["--privileged"],
+  "postCreateCommand": "echo 'source /opt/esp/idf/export.sh > /dev/null 2>&1' >> ~/.bashrc",
   "postAttachCommand": "git config --global --unset-all gpg.program"
 }

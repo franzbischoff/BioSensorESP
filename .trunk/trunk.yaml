@@ -7,16 +7,25 @@ plugins:
       ref: v0.0.6
       uri: https://github.com/trunk-io/plugins
 lint:
+  compile_commands: json
   enabled:
+    - semgrep@0.122.0
+    - include-what-you-use@0.18
+    - stylelint@14.15.0
     - yamllint@1.28.0
+    - actionlint@1.6.22
+    - prettier@2.8.0
     - hadolint@2.12.0
     - clang-tidy@14.0.0
-    - git-diff-check
-    - markdownlint@0.32.2
-    - actionlint@1.6.22
-    - gitleaks@8.15.0
     - clang-format@14.0.0
-    - prettier@2.7.1
+    - gitleaks@8.15.1
+    - markdownlint@0.32.2
+    - git-diff-check
+  ignore:
+    - linters: [prettier]
+      paths:
+        # half-html
+        - docs/*/header.html
 runtimes:
   enabled:
     - python@3.10.3
