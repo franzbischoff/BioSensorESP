@@ -36,7 +36,8 @@
 	"EditorConfig.EditorConfig",
 	"microhobby.linuxkerneldev",
 	"Serhioromano.vscode-gitflow",
-	"marvhen.reflow-markdown"
+	"marvhen.reflow-markdown",
+	"eamodio.gitlens"
 ],
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces,type=bind",
   /* the path of workspace folder to be opened after container is running
