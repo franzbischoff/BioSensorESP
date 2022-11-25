@@ -1,5 +1,4 @@
-FROM espressif/idf:release-v4.4 AS build-44
-FROM espressif/idf:release-v5.0 AS build-50
+FROM espressif/idf:release-v4.4
 
 ARG DEBIAN_FRONTEND=nointeractive
 

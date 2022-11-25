@@ -86,81 +86,81 @@ public:
 
     /// @brief Returns the data buffer
     /// @return returns a pointer to the data buffer
-    float *get_data_buffer() { return data_buffer_; };
+    float *get_data_buffer() { return _data_buffer; };
 
     /// @brief Returns the computed streaming MP
     /// @return returns a pointer to the MP buffer
-    float *get_matrix() { return vmatrix_profile_; };
+    float *get_matrix() { return _vmatrix_profile; };
 
     /// @brief Returns the computed streaming MP indices
     /// @return returns a pointer to the MP indices buffer
-    int16_t *get_indexes() { return vprofile_index_; };
+    int16_t *get_indexes() { return _vprofile_index; };
 
     /// @brief Returns the computed FLOSS
     /// @return returns a pointer to the FLOSS buffer
-    float *get_floss() { return floss_; };
+    float *get_floss() { return _floss; };
 
     /// @brief Returns the computed ideal arc counts
     /// @return returns a pointer to the ideal arc counts buffer
-    float *get_iac() { return iac_; };
+    float *get_iac() { return _iac; };
 
-    float *get_vmmu() { return vmmu_; };
+    float *get_vmmu() { return _vmmu; };
 
-    float *get_vsig() { return vsig_; };
+    float *get_vsig() { return _vsig; };
 
-    float *get_ddf() { return vddf_; };
+    float *get_ddf() { return _vddf; };
 
-    float *get_ddg() { return vddg_; };
+    float *get_ddg() { return _vddg; };
 
-    float *get_vww() { return vww_; };
+    float *get_vww() { return _vww; };
 
-    uint16_t get_buffer_used() { return buffer_used_; };
+    uint16_t get_buffer_used() { return _buffer_used; };
 
-    int16_t get_buffer_start() { return buffer_start_; };
+    int16_t get_buffer_start() { return _buffer_start; };
 
-    uint16_t get_profile_len() { return profile_len_; };
+    uint16_t get_profile_len() { return _profile_len; };
 
-    float get_last_movsum() { return last_accum_ + last_resid_; };
+    float get_last_movsum() { return _last_accum + _last_resid; };
 
-    float get_last_mov2sum() { return last_accum2_ + last_resid2_; };
+    float get_last_mov2sum() { return _last_accum2 + _last_resid2; };
 
 private:
-    bool new_data_(const float *data, uint16_t size);
-    void floss_iac_();
-    void movmean_();
-    void movsig_();
-    void muinvn_(uint16_t size = 0U);
-    void mp_next_(uint16_t size = 0U);
-    void ddf_(uint16_t size = 0U);
-    void ddg_(uint16_t size = 0U);
-    void ww_s_();
+    bool _new_data(const float *data, uint16_t size);
+    void _floss_iac();
+    void _movmean();
+    void _movsig();
+    void _muinvn(uint16_t size = 0U);
+    void _mp_next(uint16_t size = 0U);
+    void _ddf(uint16_t size = 0U);
+    void _ddg(uint16_t size = 0U);
+    void _ww_s();
 
-    const uint16_t window_size_;
-    const float ez_;
-    const uint16_t buffer_size_;
-    const uint16_t profile_len_; /// A public variable.
-    const uint16_t range_;       /// same as profile_length - 1
-    const uint16_t exclusion_zone_;
+    const uint16_t _window_size;
+    const float _ez;
+    const uint16_t _buffer_size;
+    const uint16_t _profile_len; /// A public variable.
+    const uint16_t _range;       /// same as profile_length - 1
+    const uint16_t _exclusion_zone;
 
-    uint16_t buffer_used_ = 0U;
-    int16_t buffer_start_ = 0;
+    uint16_t _buffer_used = 0U;
+    int16_t _buffer_start = 0;
 
-    float last_accum_ = 0.0F;
-    float last_resid_ = 0.0F;
-    float last_accum2_ = 0.0F;
-    float last_resid2_ = 0.0F;
+    float _last_accum = 0.0F;
+    float _last_resid = 0.0F;
+    float _last_accum2 = 0.0F;
+    float _last_resid2 = 0.0F;
 
     // arrays
-    float *data_buffer_ = nullptr;
-    float *vmatrix_profile_ = nullptr;
-    int16_t *vprofile_index_ = nullptr;
-    float *floss_ = nullptr;
-    float *iac_ = nullptr;
-    float *vmmu_ = nullptr;
-    float *vsig_ = nullptr;
-    float *vddf_ = nullptr;
-    float *vddg_ = nullptr;
-    float *vww_ = nullptr;
+    float *_data_buffer = nullptr;
+    float *_vmatrix_profile = nullptr;
+    int16_t *_vprofile_index = nullptr;
+    float *_floss = nullptr;
+    float *_iac = nullptr;
+    float *_vmmu = nullptr;
+    float *_vsig = nullptr;
+    float *_vddf = nullptr;
+    float *_vddg = nullptr;
+    float *_vww = nullptr;
 };
 } // namespace mp
 #endif // MPX_MPX_HPP_

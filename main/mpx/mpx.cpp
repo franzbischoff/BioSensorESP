@@ -9,132 +9,132 @@ namespace mp {
 static const char TAG[] = "mpx";
 
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
-    : window_size_(window_size), ez_(ez), buffer_size_(buffer_size), profile_len_(buffer_size - window_size_ + 1U),
-      range_(profile_len_ - 1U), exclusion_zone_((uint16_t)(lroundf((float)window_size_ * ez_ + __FLT_EPSILON__) + 1U)),
-      buffer_start_((int16_t)buffer_size), data_buffer_((float *)pvPortCalloc(buffer_size_ + 1U, sizeof(float))),
-      vmatrix_profile_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      vprofile_index_((int16_t *)pvPortCalloc(profile_len_ + 1U, sizeof(int16_t))),
-      floss_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      iac_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      vmmu_((float *)calloc(profile_len_ + 1U, sizeof(float))),
-      vsig_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      vddf_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      vddg_((float *)pvPortCalloc(profile_len_ + 1U, sizeof(float))),
-      vww_((float *)pvPortCalloc(window_size_ + 1U, sizeof(float)))
+    : _window_size(window_size), _ez(ez), _buffer_size(buffer_size), _profile_len(buffer_size - _window_size + 1U),
+      _range(_profile_len - 1U), _exclusion_zone((uint16_t)(lroundf((float)_window_size * _ez + __FLT_EPSILON__) + 1U)),
+      _buffer_start((int16_t)buffer_size), _data_buffer((float *)pvPortCalloc(_buffer_size + 1U, sizeof(float))),
+      _vmatrix_profile((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _vprofile_index((int16_t *)pvPortCalloc(_profile_len + 1U, sizeof(int16_t))),
+      _floss((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _iac((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _vmmu((float *)calloc(_profile_len + 1U, sizeof(float))),
+      _vsig((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _vddf((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _vddg((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
+      _vww((float *)pvPortCalloc(_window_size + 1U, sizeof(float)))
 {
     // change the default value to 0
 
-    if (vmatrix_profile_ != nullptr && vprofile_index_ != nullptr) {
-        for (uint16_t i = 0U; i < profile_len_; ++i) {
-            vmatrix_profile_[i] = -1000000.0F;
-            vprofile_index_[i] = -1;
+    if (_vmatrix_profile != nullptr && _vprofile_index != nullptr) {
+        for (uint16_t i = 0U; i < _profile_len; ++i) {
+            _vmatrix_profile[i] = -1000000.0F;
+            _vprofile_index[i] = -1;
         }
     }
 
-    this->floss_iac_();   // computes the empirical IAC using random data
+    this->_floss_iac();   // computes the empirical IAC using random data
     this->prune_buffer(); // prunes the buffer filling it with a random walk
 }
 
 Mpx::~Mpx()
 {
     // free arrays
-    vPortFree(this->vww_);
-    vPortFree(this->vddg_);
-    vPortFree(this->vddf_);
-    vPortFree(this->vsig_);
-    vPortFree(this->vmmu_);
-    vPortFree(this->iac_);
-    vPortFree(this->vprofile_index_);
-    vPortFree(this->vmatrix_profile_);
-    vPortFree(this->data_buffer_);
-    vPortFree(this->floss_);
+    vPortFree(this->_vww);
+    vPortFree(this->_vddg);
+    vPortFree(this->_vddf);
+    vPortFree(this->_vsig);
+    vPortFree(this->_vmmu);
+    vPortFree(this->_iac);
+    vPortFree(this->_vprofile_index);
+    vPortFree(this->_vmatrix_profile);
+    vPortFree(this->_data_buffer);
+    vPortFree(this->_floss);
 }
 
 // cppcheck-suppress unusedFunction
 uint16_t Mpx::compute(const float *data, uint16_t size)
 {
-    bool const first = new_data_(data, size); // store new data on buffer
+    bool const first = _new_data(data, size); // store new data on buffer
 
     // If the buffer is not pruned, the new data may be the first one, then we need to precompute the
     // entire helping data structures. Or we just update them with the new data.
     if (first) {
-        muinvn_(0U);
-        ddf_(0U);
-        ddg_(0U);
+        _muinvn(0U);
+        _ddf(0U);
+        _ddg(0U);
     } else {
-        muinvn_(size);  // compute next mean and sig
-        ddf_(size);     // compute next ddf
-        ddg_(size);     // compute next ddg
-        mp_next_(size); // shift MP
+        _muinvn(size);  // compute next mean and sig
+        _ddf(size);     // compute next ddf
+        _ddg(size);     // compute next ddg
+        _mp_next(size); // shift MP
     }
 
-    ww_s_(); // compute normalized window
+    _ww_s(); // compute normalized window
 
-    // if (time_constraint_ > 0) {
-    //   diag_start = buffer_size_ - time_constraint_ - window_size_;
+    // if (_time_constraint > 0) {
+    //   diag_start = _buffer_size - _time_constraint - _window_size;
     // }
 
-    uint16_t const diag_start = this->buffer_start_;
-    uint16_t const diag_end = this->profile_len_ - this->exclusion_zone_;
+    uint16_t const diag_start = this->_buffer_start;
+    uint16_t const diag_end = this->_profile_len - this->_exclusion_zone;
 
     for (uint16_t i = diag_start; i < diag_end; ++i) {
-        // this mess is just the inner_product but data_buffer_ needs to be minus vmmu_[i] before multiply
+        // this mess is just the inner_product but _data_buffer needs to be minus _vmmu[i] before multiply
         float c = 0.0F;
 
         // inner product demeaned
-        for (uint16_t j = 0U; j < window_size_; ++j) {
-            c += (data_buffer_[i + j] - vmmu_[i]) * vww_[j];
+        for (uint16_t j = 0U; j < _window_size; ++j) {
+            c += (_data_buffer[i + j] - _vmmu[i]) * _vww[j];
         }
 
         uint16_t off_min = 0U;
 
         if (first) {
-            off_min = range_ - i - 1;
+            off_min = _range - i - 1;
         } else {
             // cppcheck-suppress duplicateExpression
-            off_min = MAX(range_ - size, range_ - i - 1); // -V501
+            off_min = MAX(_range - size, _range - i - 1); // -V501
         }
 
-        uint16_t const off_start = range_;
+        uint16_t const off_start = _range;
 
         for (uint16_t offset = off_start; offset > off_min; offset--) {
             // min is offset + diag; max is (profile_len - 1); each iteration has the size of off_max
-            uint16_t const off_diag = offset - (range_ - i);
+            uint16_t const off_diag = offset - (_range - i);
 
-            c += vddf_[offset] * vddg_[off_diag] + vddf_[off_diag] * vddg_[offset];
+            c += _vddf[offset] * _vddg[off_diag] + _vddf[off_diag] * _vddg[offset];
 
-            if ((vsig_[offset] < 0.0F) || (vsig_[off_diag] < 0.0F)) { // wild sig, misleading
+            if ((_vsig[offset] < 0.0F) || (_vsig[off_diag] < 0.0F)) { // wild sig, misleading
                 continue;
             }
 
-            float const c_cmp = c * vsig_[offset] * vsig_[off_diag];
+            float const c_cmp = c * _vsig[offset] * _vsig[off_diag];
 
             // RMP
-            if (c_cmp > vmatrix_profile_[off_diag]) {
-                vmatrix_profile_[off_diag] = c_cmp;
-                vprofile_index_[off_diag] = (int16_t)(offset); // May be added by 1 if index starts on 1
+            if (c_cmp > _vmatrix_profile[off_diag]) {
+                _vmatrix_profile[off_diag] = c_cmp;
+                _vprofile_index[off_diag] = (int16_t)(offset); // May be added by 1 if index starts on 1
             }
         }
     }
 
-    return (this->buffer_size_ - this->buffer_used_);
+    return (this->_buffer_size - this->_buffer_used);
 }
 
 void Mpx::prune_buffer()
 {
     // prune buffer with a random walk
-    data_buffer_[0] = 0.001F;
+    _data_buffer[0] = 0.001F;
 
-    for (uint16_t i = 1U; i < buffer_size_; ++i) {
+    for (uint16_t i = 1U; i < _buffer_size; ++i) {
         float mock = (float)((RAND() % 1000) - 500);
         mock /= 1000.0F;
-        data_buffer_[i] = data_buffer_[i - 1] + mock;
+        _data_buffer[i] = _data_buffer[i - 1] + mock;
     }
-    buffer_used_ = buffer_size_;
-    buffer_start_ = 0;
-    muinvn_(0U);
-    ddf_(0U);
-    ddg_(0U);
+    _buffer_used = _buffer_size;
+    _buffer_start = 0;
+    _muinvn(0U);
+    _ddf(0U);
+    _ddg(0U);
 }
 
 // cppcheck-suppress unusedFunction
@@ -143,16 +143,16 @@ void Mpx::floss()
     // Computes the FLOSS using the empirical IAC
 
     // first zero the array
-    for (uint16_t i = 0U; i < this->profile_len_; ++i) {
-        this->floss_[i] = 0.0F;
+    for (uint16_t i = 0U; i < this->_profile_len; ++i) {
+        this->_floss[i] = 0.0F;
     }
 
     // compute the FLOSS from the 0 to the end of the profile but the exclusion zone
-    for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); ++i) {
-        int16_t const j = vprofile_index_[i];
+    for (uint16_t i = 0U; i < (this->_profile_len - this->_exclusion_zone - 1); ++i) {
+        int16_t const j = _vprofile_index[i];
 
         // it is not supposed to point beyond the profile
-        if (j >= this->profile_len_) {
+        if (j >= this->_profile_len) {
             LOG_DEBUG(TAG, "DEBUG: j >= this->profile_len_");
             continue;
         }
@@ -171,23 +171,23 @@ void Mpx::floss()
             continue;
         }
         // RMP, i is always < j
-        this->floss_[i] += 1.0F;
-        this->floss_[j] -= 1.0F;
+        this->_floss[i] += 1.0F;
+        this->_floss[j] -= 1.0F;
     }
 
     // const float a = 1.939274;
     // const float b = 1.69815;
     // const float c = 4.035477;
-    ////  const float len = (float)this->profile_len_;
+    ////  const float len = (float)this->_profile_len;
     ////  const float x = 1.0F / len;
     ////  const float llen = len * 1.1494F;
     ////  float iac = 0.001F; // cppcheck-suppress unreadVariable
 
     // cumsum
-    for (uint16_t i = 0U; i < this->range_; ++i) {
-        this->floss_[i + 1U] += this->floss_[i];
-        if (i < this->window_size_ || i > (this->profile_len_ - this->window_size_)) {
-            this->floss_[i] = 1.0F;
+    for (uint16_t i = 0U; i < this->_range; ++i) {
+        this->_floss[i + 1U] += this->_floss[i];
+        if (i < this->_window_size || i > (this->_profile_len - this->_window_size)) {
+            this->_floss[i] = 1.0F;
         } else {
             // iac = a * b * powf(i * x, a - 1.0) * powf(1.0 - powf(i * x, a), b - 1.0) * len / c;
             // iac = 0.816057 * len * powf(i * x, 0.939274) * powf(1 - powf(i * x, 1.93927), 0.69815);
@@ -195,10 +195,10 @@ void Mpx::floss()
             //     // const float idx = (float)i * x;
             //     // iac = powf(idx, 1.08F) * powf(1.0F - idx, 0.64F) * llen; // faster
             // iac = a * b * powf(idx, (a - 1)) * powf(1 - powf(idx, a), (b - 1)) * len / 4.035477;
-            if (this->floss_[i] > this->iac_[i]) {
-                this->floss_[i] = 1.0F;
+            if (this->_floss[i] > this->_iac[i]) {
+                this->_floss[i] = 1.0F;
             } else {
-                this->floss_[i] /= this->iac_[i];
+                this->_floss[i] /= this->_iac[i];
             }
         }
     }
@@ -209,41 +209,41 @@ void Mpx::floss()
 }
 
 /// @brief computes the empirical IAC using random data
-void Mpx::floss_iac_()
+void Mpx::_floss_iac()
 {
     uint16_t *mpi = nullptr;
 
-    mpi = ((uint16_t *)pvPortCalloc(this->profile_len_ + 1U, sizeof(uint16_t)));
+    mpi = ((uint16_t *)pvPortCalloc(this->_profile_len + 1U, sizeof(uint16_t)));
 
     if (mpi == nullptr) {
         LOG_DEBUG(TAG, "Memory allocation failed");
         return;
     }
 
-    for (uint16_t i = 0U; i < this->profile_len_; ++i) {
-        this->iac_[i] = 0.0F;
+    for (uint16_t i = 0U; i < this->_profile_len; ++i) {
+        this->_iac[i] = 0.0F;
     }
 
     for (uint16_t k = 0U; k < 10; ++k) { // repeat 10 times to smooth the result
-        for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); ++i) {
-            mpi[i] = (RAND() % (this->range_ - (i + this->exclusion_zone_))) + (i + this->exclusion_zone_);
+        for (uint16_t i = 0U; i < (this->_profile_len - this->_exclusion_zone - 1); ++i) {
+            mpi[i] = (RAND() % (this->_range - (i + this->_exclusion_zone))) + (i + this->_exclusion_zone);
         }
 
-        for (uint16_t i = 0U; i < (this->profile_len_ - this->exclusion_zone_ - 1); ++i) {
+        for (uint16_t i = 0U; i < (this->_profile_len - this->_exclusion_zone - 1); ++i) {
             uint16_t const j = mpi[i];
 
-            if (j >= this->profile_len_) {
+            if (j >= this->_profile_len) {
                 LOG_DEBUG(TAG, "j >= this->profile_len_");
                 continue;
             }
             // RMP, i is always < j
-            this->iac_[i] += 0.1F;
-            this->iac_[j] -= 0.1F;
+            this->_iac[i] += 0.1F;
+            this->_iac[j] -= 0.1F;
         }
     }
     // cumsum
-    for (uint16_t i = 0U; i < this->range_; ++i) {
-        this->iac_[i + 1U] += this->iac_[i];
+    for (uint16_t i = 0U; i < this->_range; ++i) {
+        this->_iac[i + 1U] += this->_iac[i];
     }
 
     vPortFree(mpi);
@@ -251,100 +251,100 @@ void Mpx::floss_iac_()
 
 /// @brief Shifts the MP and MPI buffers to the left
 /// @param size amount of samples to shift
-void Mpx::mp_next_(uint16_t size)
+void Mpx::_mp_next(uint16_t size)
 {
-    uint16_t const j = this->profile_len_ - size;
+    uint16_t const j = this->_profile_len - size;
 
     // update 1 step
     for (uint16_t i = 0; i < j; ++i) {
-        vmatrix_profile_[i] = vmatrix_profile_[i + size];
+        _vmatrix_profile[i] = _vmatrix_profile[i + size];
 
-        vprofile_index_[i] = (int16_t)(vprofile_index_[i + size] - size); // the index must be reduced
+        _vprofile_index[i] = (int16_t)(_vprofile_index[i + size] - size); // the index must be reduced
 
         // avoid too negative values
-        if (vprofile_index_[i] < -1) {
-            vprofile_index_[i] = -1;
+        if (_vprofile_index[i] < -1) {
+            _vprofile_index[i] = -1;
         }
     }
 
-    for (uint16_t i = j; i < profile_len_; ++i) {
-        vmatrix_profile_[i] = -1000000.0F;
-        vprofile_index_[i] = -1;
+    for (uint16_t i = j; i < _profile_len; ++i) {
+        _vmatrix_profile[i] = -1000000.0F;
+        _vprofile_index[i] = -1;
     }
 }
 
 /// @brief Shifts the ddf buffer to the left
 /// @param size amount of samples to shift
-void Mpx::ddf_(uint16_t size)
+void Mpx::_ddf(uint16_t size)
 {
     // differentials have 0 as their first entry. This simplifies index
     // calculations slightly and allows us to avoid special "first line"
     // handling.
 
-    uint16_t start = buffer_start_;
+    uint16_t start = _buffer_start;
 
     if (size > 0U) {
         // shift data
-        for (uint16_t i = buffer_start_; i < (range_ - size); ++i) {
-            this->vddf_[i] = this->vddf_[i + size];
+        for (uint16_t i = _buffer_start; i < (_range - size); ++i) {
+            this->_vddf[i] = this->_vddf[i + size];
         }
 
-        start = (range_ - size);
+        start = (_range - size);
     }
 
-    for (uint16_t i = start; i < range_; ++i) {
-        this->vddf_[i] = 0.5F * (this->data_buffer_[i] - this->data_buffer_[i + this->window_size_]);
+    for (uint16_t i = start; i < _range; ++i) {
+        this->_vddf[i] = 0.5F * (this->_data_buffer[i] - this->_data_buffer[i + this->_window_size]);
     }
 
     // DEBUG: this should already be zero
-    this->vddf_[range_] = 0.0F;
+    this->_vddf[_range] = 0.0F;
 }
 
 /// @brief Shifts the ddg buffer to the left
 /// @param size amount of samples to shift
-void Mpx::ddg_(uint16_t size)
+void Mpx::_ddg(uint16_t size)
 {
     // ddg: (data[(w+1):data_len] - mov_avg[2:(data_len - w + 1)]) + (data[1:(data_len - w)] - mov_avg[1:(data_len -
     // w)]) (subtract the mov_mean of all data, but the first window) + (subtract the mov_mean of all data, but the last
     // window)
 
-    uint16_t start = buffer_start_;
+    uint16_t start = _buffer_start;
 
     if (size > 0U) {
         // shift data
-        for (uint16_t i = buffer_start_; i < (range_ - size); ++i) {
-            this->vddg_[i] = this->vddg_[i + size];
+        for (uint16_t i = _buffer_start; i < (_range - size); ++i) {
+            this->_vddg[i] = this->_vddg[i + size];
         }
 
-        start = (range_ - size);
+        start = (_range - size);
     }
 
-    for (uint16_t i = start; i < range_; ++i) {
-        this->vddg_[i] = (this->data_buffer_[i + this->window_size_] - this->vmmu_[i + 1U]) +
-                         (this->data_buffer_[i] - this->vmmu_[i]);
+    for (uint16_t i = start; i < _range; ++i) {
+        this->_vddg[i] = (this->_data_buffer[i + this->_window_size] - this->_vmmu[i + 1U]) +
+                         (this->_data_buffer[i] - this->_vmmu[i]);
     }
 
-    this->vddg_[range_] = 0.0F;
+    this->_vddg[_range] = 0.0F;
 }
 
 /// @brief Computes the newest window, demeaned
-void Mpx::ww_s_()
+void Mpx::_ww_s()
 {
-    for (uint16_t i = 0U; i < window_size_; ++i) {
-        this->vww_[i] = (this->data_buffer_[range_ + i] - this->vmmu_[range_]);
+    for (uint16_t i = 0U; i < _window_size; ++i) {
+        this->_vww[i] = (this->_data_buffer[_range + i] - this->_vmmu[_range]);
     }
 }
 
 /// @brief Computes the moving mean of the data buffer using the muinvn algorithm
 ///        which compensates for floating point errors.
-void Mpx::movmean_()
+void Mpx::_movmean()
 {
-    float accum = this->data_buffer_[buffer_start_];
+    float accum = this->_data_buffer[_buffer_start];
     float resid = 0.0F;
     float movsum;
 
-    for (uint16_t i = 1U; i < this->window_size_; ++i) {
-        float const m = this->data_buffer_[buffer_start_ + i];
+    for (uint16_t i = 1U; i < this->_window_size; ++i) {
+        float const m = this->_data_buffer[_buffer_start + i];
         float const p = accum;
         accum = accum + m;
         float const q = accum - p;
@@ -356,11 +356,11 @@ void Mpx::movmean_()
     }
 
     movsum = accum + resid;
-    this->vmmu_[buffer_start_] = (float)(movsum / (float)this->window_size_);
+    this->_vmmu[_buffer_start] = (float)(movsum / (float)this->_window_size);
 
-    for (uint16_t i = (this->window_size_ + buffer_start_); i < this->buffer_size_; ++i) {
-        float const m = this->data_buffer_[i - this->window_size_];
-        float const n = this->data_buffer_[i];
+    for (uint16_t i = (this->_window_size + _buffer_start); i < this->_buffer_size; ++i) {
+        float const m = this->_data_buffer[i - this->_window_size];
+        float const n = this->_data_buffer[i];
         float const p = accum - m;
         float const q = p - accum;
         resid = resid + ((accum - (p - q)) - (m + q));
@@ -370,23 +370,23 @@ void Mpx::movmean_()
         resid = resid + ((p - (accum - t)) + (n - t));
 
         movsum = accum + resid;
-        this->vmmu_[i - this->window_size_ + 1U] = (float)(movsum / (float)this->window_size_);
+        this->_vmmu[i - this->_window_size + 1U] = (float)(movsum / (float)this->_window_size);
     }
 
-    this->last_accum_ = accum;
-    this->last_resid_ = resid;
+    this->_last_accum = accum;
+    this->_last_resid = resid;
 }
 
 /// @brief Computes the moving sig of the data buffer using the muinvn algorithm
 ///        which compensates for floating point errors.
-void Mpx::movsig_()
+void Mpx::_movsig()
 {
-    float accum = this->data_buffer_[buffer_start_] * this->data_buffer_[buffer_start_];
+    float accum = this->_data_buffer[_buffer_start] * this->_data_buffer[_buffer_start];
     float resid = 0.0F;
     float mov2sum;
 
-    for (uint16_t i = 1U; i < this->window_size_; ++i) {
-        float const m = this->data_buffer_[buffer_start_ + i] * this->data_buffer_[buffer_start_ + i];
+    for (uint16_t i = 1U; i < this->_window_size; ++i) {
+        float const m = this->_data_buffer[_buffer_start + i] * this->_data_buffer[_buffer_start + i];
         float const p = accum;
         accum = accum + m;
         float const q = accum - p;
@@ -398,22 +398,22 @@ void Mpx::movsig_()
     }
 
     mov2sum = accum + resid;
-    float const psig = mov2sum - this->vmmu_[buffer_start_] * this->vmmu_[buffer_start_] * (float)this->window_size_;
+    float const psig = mov2sum - this->_vmmu[_buffer_start] * this->_vmmu[_buffer_start] * (float)this->_window_size;
 
     // For sd > 1.19e-7; window 25 -> sig will be <= 1.68e+6 (psig >= 3.54e-13) and for window 350 -> sig will be
     // <= 4.5e+5 (psig >= 4.94e-12) For sd < 100; window 25 -> sig will be >= 0.002 (psig <= 25e4) and for window 350 ->
     // sig will be >= 0.0005 (psig <= 4e6)
 
     if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
-        this->vsig_[buffer_start_] = 1.0F / sqrtf(psig);
+        this->_vsig[_buffer_start] = 1.0F / sqrtf(psig);
     } else {
         LOG_DEBUG(TAG, "DEBUG: psig1 precision, %.3f", psig);
-        this->vsig_[buffer_start_] = -1.0F;
+        this->_vsig[_buffer_start] = -1.0F;
     }
 
-    for (uint16_t i = (this->window_size_ + buffer_start_); i < this->buffer_size_; ++i) {
-        float const m = this->data_buffer_[i - this->window_size_] * this->data_buffer_[i - this->window_size_];
-        float const n = this->data_buffer_[i] * this->data_buffer_[i];
+    for (uint16_t i = (this->_window_size + _buffer_start); i < this->_buffer_size; ++i) {
+        float const m = this->_data_buffer[i - this->_window_size] * this->_data_buffer[i - this->_window_size];
+        float const n = this->_data_buffer[i] * this->_data_buffer[i];
         float const p = accum - m;
         float const q = p - accum;
         resid = resid + ((accum - (p - q)) - (m + q));
@@ -421,50 +421,50 @@ void Mpx::movsig_()
         float const t = accum - p;
         resid = resid + ((p - (accum - t)) + (n - t));
         mov2sum = accum + resid;
-        float const ppsig = mov2sum - this->vmmu_[i - this->window_size_ + 1U] *
-                                          this->vmmu_[i - this->window_size_ + 1U] * (float)this->window_size_;
+        float const ppsig = mov2sum - this->_vmmu[i - this->_window_size + 1U] *
+                                          this->_vmmu[i - this->_window_size + 1U] * (float)this->_window_size;
 
         if (ppsig > __FLT_EPSILON__ && ppsig < 4000000.0F) {
-            this->vsig_[i - this->window_size_ + 1U] = 1.0F / sqrtf(ppsig);
+            this->_vsig[i - this->_window_size + 1U] = 1.0F / sqrtf(ppsig);
         } else {
             LOG_DEBUG(TAG, "DEBUG: ppsig precision, %.3f", ppsig);
-            this->vsig_[i - this->window_size_ + 1U] = -1.0F;
+            this->_vsig[i - this->_window_size + 1U] = -1.0F;
         }
     }
 
-    this->last_accum2_ = accum;
-    this->last_resid2_ = resid;
+    this->_last_accum2 = accum;
+    this->_last_resid2 = resid;
 }
 
 /// @brief Updates the moving mean and sig of the data buffer using the muinvn algorithm
 ///        which compensates for floating point errors.
 /// @param size the size of the new data
-void Mpx::muinvn_(uint16_t size)
+void Mpx::_muinvn(uint16_t size)
 {
     if (size == 0U) {
-        movmean_();
-        movsig_();
+        _movmean();
+        _movsig();
         return;
     }
 
-    uint16_t const j = this->profile_len_ - size;
+    uint16_t const j = this->_profile_len - size;
 
     // update 1 step
     for (uint16_t i = 0U; i < j; ++i) {
-        vmmu_[i] = vmmu_[i + size];
-        vsig_[i] = vsig_[i + size];
+        _vmmu[i] = _vmmu[i + size];
+        _vsig[i] = _vsig[i + size];
     }
 
     // compute new mmu sig
-    float accum = this->last_accum_;   // NOLINT(misc-const-correctness) - this variable can't be const
-    float accum2 = this->last_accum2_; // NOLINT(misc-const-correctness) - this variable can't be const
-    float resid = this->last_resid_;   // NOLINT(misc-const-correctness) - this variable can't be const
-    float resid2 = this->last_resid2_; // NOLINT(misc-const-correctness) - this variable can't be const
+    float accum = this->_last_accum;   // NOLINT(misc-const-correctness) - this variable can't be const
+    float accum2 = this->_last_accum2; // NOLINT(misc-const-correctness) - this variable can't be const
+    float resid = this->_last_resid;   // NOLINT(misc-const-correctness) - this variable can't be const
+    float resid2 = this->_last_resid2; // NOLINT(misc-const-correctness) - this variable can't be const
 
-    for (uint16_t i = j; i < profile_len_; ++i) {
+    for (uint16_t i = j; i < _profile_len; ++i) {
         /* mean */
-        float m = data_buffer_[i - 1];
-        float n = data_buffer_[i - 1 + window_size_];
+        float m = _data_buffer[i - 1];
+        float n = _data_buffer[i - 1 + _window_size];
         float p = accum - m;
         float q = p - accum;
         resid = resid + ((accum - (p - q)) - (m + q));
@@ -472,11 +472,11 @@ void Mpx::muinvn_(uint16_t size)
         accum = p + n;
         float t = accum - p;
         resid = resid + ((p - (accum - t)) + (n - t));
-        vmmu_[i] = (float)((accum + resid) / (float)window_size_);
+        _vmmu[i] = (float)((accum + resid) / (float)_window_size);
 
         /* sig */
-        m = data_buffer_[i - 1] * data_buffer_[i - 1];
-        n = data_buffer_[i - 1 + window_size_] * data_buffer_[i - 1 + window_size_];
+        m = _data_buffer[i - 1] * _data_buffer[i - 1];
+        n = _data_buffer[i - 1 + _window_size] * _data_buffer[i - 1 + _window_size];
         p = accum2 - m;
         q = p - accum2;
         resid2 = resid2 + ((accum2 - (p - q)) - (m + q));
@@ -485,62 +485,62 @@ void Mpx::muinvn_(uint16_t size)
         t = accum2 - p;
         resid2 = resid2 + ((p - (accum2 - t)) + (n - t));
 
-        float const psig = (accum2 + resid2) - vmmu_[i] * vmmu_[i] * (float)window_size_;
+        float const psig = (accum2 + resid2) - _vmmu[i] * _vmmu[i] * (float)_window_size;
         if (psig > __FLT_EPSILON__ && psig < 4000000.0F) {
-            vsig_[i] = 1.0F / sqrtf(psig);
+            _vsig[i] = 1.0F / sqrtf(psig);
         } else {
             LOG_DEBUG(TAG, "DEBUG: psig precision, %.3f", psig);
-            vsig_[i] = -1.0F;
+            _vsig[i] = -1.0F;
         }
     }
 
-    this->last_accum_ = accum;
-    this->last_accum2_ = accum2;
-    this->last_resid_ = resid;
-    this->last_resid2_ = resid2;
+    this->_last_accum = accum;
+    this->_last_accum2 = accum2;
+    this->_last_resid = resid;
+    this->_last_resid2 = resid2;
 }
 
 /// @brief Shifts the data buffer to the left by the given amount and fills with new data
 /// @param data The new data to fill the buffer with
 /// @param size The size of the new data
 /// @return Returns true if it is the first time the buffer is filled
-bool Mpx::new_data_(const float *data, uint16_t size)
+bool Mpx::_new_data(const float *data, uint16_t size)
 {
     bool first = true;
 
-    if ((2U * size) > buffer_size_) {
+    if ((2U * size) > _buffer_size) {
         LOG_DEBUG(TAG, "Data size is too large");
         return false;
-    } else if (size < (window_size_) && buffer_used_ < window_size_) {
+    } else if (size < (_window_size) && _buffer_used < _window_size) {
         LOG_DEBUG(TAG, "Data size is too small");
         return false;
     } else {
-        if ((buffer_start_ != buffer_size_) || buffer_used_ > 0U) {
+        if ((_buffer_start != _buffer_size) || _buffer_used > 0U) {
             first = false;
             // we must shift data
-            for (uint16_t i = 0U; i < (buffer_size_ - size); ++i) {
-                this->data_buffer_[i] = this->data_buffer_[size + i];
+            for (uint16_t i = 0U; i < (_buffer_size - size); ++i) {
+                this->_data_buffer[i] = this->_data_buffer[size + i];
             }
             // then copy
             for (uint16_t i = 0U; i < size; ++i) {
-                this->data_buffer_[(buffer_size_ - size + i)] = data[i];
+                this->_data_buffer[(_buffer_size - size + i)] = data[i];
             }
         } else {
             // fresh start, buffer must be already filled with zeroes
             for (uint16_t i = 0U; i < size; ++i) {
-                this->data_buffer_[(buffer_size_ - size + i)] = data[i];
+                this->_data_buffer[(_buffer_size - size + i)] = data[i];
             }
         }
 
-        buffer_used_ += size;
-        buffer_start_ = (int16_t)(buffer_start_ - size);
+        _buffer_used += size;
+        _buffer_start = (int16_t)(_buffer_start - size);
 
-        if (buffer_used_ > buffer_size_) {
-            buffer_used_ = buffer_size_;
+        if (_buffer_used > _buffer_size) {
+            _buffer_used = _buffer_size;
         }
 
-        if (buffer_start_ < 0) {
-            buffer_start_ = 0;
+        if (_buffer_start < 0) {
+            _buffer_start = 0;
         }
     }
 
