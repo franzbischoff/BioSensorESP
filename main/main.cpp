@@ -5,17 +5,37 @@
 #include "settings.h"
 
 #include <cmath>
-#include "esp32/spiram.h"
-#include "esp_littlefs.h"
+#if defined(CONFIG_ESP32_SPIRAM_SUPPORT)
+    #include "esp32/spiram.h"
+#endif
+#if defined(FILE_DATA)
+    #include "esp_littlefs.h"
+#endif
 #include "esp_log.h"
 #include "esp_spi_flash.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/ringbuf.h"
 #include "freertos/task.h"
-#include "max32664.hpp"
+#if defined(USE_AD8232_SENSOR)
+    #include "driver/gpio.h"
+    #include "driver/adc.h"
+    #include "esp_adc_cal.h"
+#else
+    #include "max32664.hpp"
+#endif
 #include "mpx/mpx.hpp"
+
+#if defined(USE_AD8232_SENSOR)
+    #define DEFAULT_VREF 1100                    // Use adc2_vref_to_gpio() to obtain a better estimate
+    #define NO_OF_SAMPLES 64                     // Multisampling
+static esp_adc_cal_characteristics_t *adc_chars; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// #if CONFIG_IDF_TARGET_ESP32
+static const adc1_channel_t CHANNEL = ADC_CHANNEL_PIN;
+static const adc_bits_width_t WIDTH = ADC_WIDTH_12Bit;
+static const adc_atten_t ATTEN = ADC_ATTEN_11db;
+static const adc_unit_t UNIT = ADC_UNIT_1;
+#endif
 
 #define SAMPLING_HZ SAMPLING_RATE_HZ
 #define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_HZ)
@@ -36,7 +56,7 @@
 [[noreturn]] void task_compute(void *pv_parameters);
 [[noreturn]] void task_read_signal(void *pv_parameters);
 
-typedef enum { CORE_0 = 0x00, CORE_1 = 0x01 } cores_t;
+typedef enum cores { CORE_0 = 0x00, CORE_1 = 0x01 } cores_t;
 
 //>> log tag
 static const char TAG[] = "main";
@@ -132,6 +152,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     }
 }
 
+#if defined(USE_AD8232_SENSOR)
 /// @brief Task to read the signal from the sensor
 /// @param pv_parameters pointer to the task parameters
 [[noreturn]] void task_read_signal(void *pv_parameters) // This is a task.
@@ -144,7 +165,120 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     float ir_res;
     const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
 
-#ifndef FILE_DATA
+    // short period filter
+    const float eps_f = 0.05F;
+    const float alpha = powf(eps_f, 1.0F / SHORT_FILTER);
+    // large (wander) period filter
+    const float l_alpha = powf(eps_f, 1.0F / WANDER_FILTER);
+
+    uint32_t ir_led;
+
+    float ir_sum = 0.0F;
+    float ir_num = 0.0F;
+    float ir_sum2 = 0.0F;
+    float ir_num2 = 0.0F;
+
+    // Check if TP is burned into eFuse
+    if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
+        ESP_LOGD(TAG, "eFuse Two Point: Supported");
+    } else {
+        ESP_LOGD(TAG, "eFuse Two Point: NOT supported");
+    }
+    // Check Vref is burned into eFuse
+    if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_VREF) == ESP_OK) {
+        ESP_LOGD(TAG, "eFuse Vref: Supported");
+    } else {
+        ESP_LOGD(TAG, "eFuse Vref: NOT supported");
+    }
+
+    adc1_config_width(WIDTH);
+    adc1_config_channel_atten(CHANNEL, ATTEN);
+
+    adc_chars = (esp_adc_cal_characteristics_t *)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+    esp_adc_cal_value_t val_type = esp_adc_cal_characterize(UNIT, ATTEN, WIDTH, DEFAULT_VREF, adc_chars);
+
+    if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
+        ESP_LOGD(TAG, "Characterized using Two Point Value");
+    } else if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+        ESP_LOGD(TAG, "Characterized using eFuse Vref");
+    } else {
+        ESP_LOGD(TAG, "Characterized using Default Vref");
+    }
+
+    gpio_set_direction(POSITIVE_LO_PIN, GPIO_MODE_INPUT); // Setup for leads off detection LO +
+    gpio_set_direction(NEGATIVE_LO_PIN, GPIO_MODE_INPUT); // Setup for leads off detection LO -
+
+    ESP_LOGD(TAG, "task_read_signal started");
+
+    vTaskDelay((portTICK_PERIOD_MS * 1000)); // Wait for sensor to stabilize
+
+    last_wake_time = xTaskGetTickCount(); // get the current tick count
+
+    for (;;) // -H776 A Task shall never return or exit.
+    {
+        vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
+
+        if ((gpio_get_level(POSITIVE_LO_PIN) == 1) || (gpio_get_level(NEGATIVE_LO_PIN) == 1)) {
+            ESP_LOGI(TAG, "!");
+            vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+        } else {
+            // send the value of analog input 0:
+            // AD8232 0-3v
+            // ADC_ATTEN_DB_11 150 mV ~ 2450 mV
+            //  users may connect a bypass capacitor (e.g. a 100 nF ceramic capacitor)
+            // 4095 for 12-bits, 2047 for 11-bits, 1023 for 10-bits, 511 for 9 bits
+            // https://docs.espressif.com/projects/esp-idf/en/v4.4.3/esp32/api-reference/peripherals/adc.html?highlight=gpio#minimizing-noise
+            uint32_t adc_reading = 0;
+            // Multisampling
+            for (int i = 0; i < NO_OF_SAMPLES; i++) {
+                adc_reading += adc1_get_raw(CHANNEL);
+            }
+            adc_reading /= NO_OF_SAMPLES;
+            ir_led = adc_reading;
+            // Convert adc_reading to voltage in mV
+            uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading, adc_chars);
+            ESP_LOGI(TAG, "Raw: %d\tVoltage: %dmV", adc_reading, voltage);
+
+            ir_sum = ir_sum * alpha + (float)ir_led;
+            ir_num = ir_num * alpha + 1.0F;
+            ir_sum2 = ir_sum2 * l_alpha + (float)ir_led;
+            ir_num2 = ir_num2 * l_alpha + 1.0F;
+            ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
+            ir_res /= 20.0F;
+
+            // if (ir_res > 50.0F || ir_res < -50.0F) {
+            //     continue;
+            // }
+
+            const UBaseType_t resbuf = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
+
+            if (resbuf == pdTRUE) {
+                if (!buffer_init) {
+                    if (++initial_counter >= BUFFER_SIZE) {
+                        buffer_init = true; // this is read by the receiver task
+                        ESP_LOGD(TAG, "[Producer] DEBUG: Buffer started, starting to compute");
+                    }
+                }
+            } else {
+                ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
+            }
+        }
+    }
+}
+#else
+/// @brief Task to read the signal from the sensor
+/// @param pv_parameters pointer to the task parameters
+[[noreturn]] void task_read_signal(void *pv_parameters) // This is a task.
+{
+    (void)pv_parameters;
+
+    TickType_t last_wake_time;
+
+    uint16_t initial_counter = 0;
+    float ir_res;
+    const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
+
+    #ifndef FILE_DATA
 
     // I2C
     const gpio_num_t i2c_scl = I2C_MASTER_SCL;
@@ -201,7 +335,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
         esp_restart();
     }
 
-#endif
+    #endif
 
     ESP_LOGD(TAG, "task_read_signal started");
 
@@ -213,7 +347,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     {
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
 
-#ifndef FILE_DATA
+    #ifndef FILE_DATA
         body = bio_hub.read_sensor();
         ir_led = body.ir_led;
 
@@ -239,7 +373,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
             ir_num2 = ir_num2 * l_alpha + 1.0F;
             ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
             ir_res /= 20.0F;
-#else
+    #else
 
         ir_res = 0.0F;
 
@@ -260,7 +394,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
             }
         }
 
-#endif
+    #endif
 
             if (ir_res > 50.0F || ir_res < -50.0F) {
                 continue;
@@ -278,14 +412,15 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
             } else {
                 ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
             }
-#ifndef FILE_DATA
+    #ifndef FILE_DATA
         } else {
             // ESP_LOGD(TAG, "[Producer] IR: %d", body.irLed);
             vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
         }
-#endif
+    #endif
     }
 }
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -384,6 +519,7 @@ extern "C" {
     TaskHandle_t compute_task_handle = nullptr;
     BaseType_t res;
 
+    // Producer Task
     res = xTaskCreatePinnedToCore(
         task_read_signal,     // Task function
         "ReadSignal",         // Just a name
@@ -403,6 +539,7 @@ extern "C" {
 
     ESP_LOGD(TAG, "Creating task 1");
 
+    // Consumer Task
     res = xTaskCreatePinnedToCore(
         task_compute,         // Task function
         "Compute",            // Just a name
@@ -421,6 +558,7 @@ extern "C" {
     }
 
     ESP_LOGD(TAG, "Main entering in infinite loop");
+    // Main loop
     while (true) {
 #if defined(LOG_MEM_LOAD)
         if (esp_log_level_get(TAG) == ESP_LOG_VERBOSE) {

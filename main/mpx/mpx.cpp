@@ -10,7 +10,7 @@ static const char TAG[] = "mpx";
 
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : _window_size(window_size), _ez(ez), _buffer_size(buffer_size), _profile_len(buffer_size - _window_size + 1U),
-      _range(_profile_len - 1U), _exclusion_zone((uint16_t)(lroundf((float)_window_size * _ez + __FLT_EPSILON__) + 1U)),
+      _range(_profile_len - 1U), _exclusion_zone(static_cast<uint16_t>(lroundf((float)_window_size * _ez + __FLT_EPSILON__) + 1U)),
       _buffer_start((int16_t)buffer_size), _data_buffer((float *)pvPortCalloc(_buffer_size + 1U, sizeof(float))),
       _vmatrix_profile((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
       _vprofile_index((int16_t *)pvPortCalloc(_profile_len + 1U, sizeof(int16_t))),
@@ -112,7 +112,7 @@ uint16_t Mpx::compute(const float *data, uint16_t size)
             // RMP
             if (c_cmp > _vmatrix_profile[off_diag]) {
                 _vmatrix_profile[off_diag] = c_cmp;
-                _vprofile_index[off_diag] = (int16_t)(offset); // May be added by 1 if index starts on 1
+                _vprofile_index[off_diag] = static_cast<int16_t>(offset); // May be added by 1 if index starts on 1
             }
         }
     }
@@ -126,7 +126,7 @@ void Mpx::prune_buffer()
     _data_buffer[0] = 0.001F;
 
     for (uint16_t i = 1U; i < _buffer_size; ++i) {
-        float mock = (float)((RAND() % 1000) - 500);
+        float mock = static_cast<float>((RAND() % 1000) - 500);
         mock /= 1000.0F;
         _data_buffer[i] = _data_buffer[i - 1] + mock;
     }
@@ -259,7 +259,7 @@ void Mpx::_mp_next(uint16_t size)
     for (uint16_t i = 0; i < j; ++i) {
         _vmatrix_profile[i] = _vmatrix_profile[i + size];
 
-        _vprofile_index[i] = (int16_t)(_vprofile_index[i + size] - size); // the index must be reduced
+        _vprofile_index[i] = static_cast<int16_t>(_vprofile_index[i + size] - size); // the index must be reduced
 
         // avoid too negative values
         if (_vprofile_index[i] < -1) {
@@ -356,7 +356,7 @@ void Mpx::_movmean()
     }
 
     movsum = accum + resid;
-    this->_vmmu[_buffer_start] = (float)(movsum / (float)this->_window_size);
+    this->_vmmu[_buffer_start] = static_cast<float>(movsum / (float)this->_window_size);
 
     for (uint16_t i = (this->_window_size + _buffer_start); i < this->_buffer_size; ++i) {
         float const m = this->_data_buffer[i - this->_window_size];
@@ -370,7 +370,7 @@ void Mpx::_movmean()
         resid = resid + ((p - (accum - t)) + (n - t));
 
         movsum = accum + resid;
-        this->_vmmu[i - this->_window_size + 1U] = (float)(movsum / (float)this->_window_size);
+        this->_vmmu[i - this->_window_size + 1U] = static_cast<float>(movsum / (float)this->_window_size);
     }
 
     this->_last_accum = accum;
@@ -472,7 +472,7 @@ void Mpx::_muinvn(uint16_t size)
         accum = p + n;
         float t = accum - p;
         resid = resid + ((p - (accum - t)) + (n - t));
-        _vmmu[i] = (float)((accum + resid) / (float)_window_size);
+        _vmmu[i] = static_cast<float>((accum + resid) / (float)_window_size);
 
         /* sig */
         m = _data_buffer[i - 1] * _data_buffer[i - 1];
@@ -533,7 +533,7 @@ bool Mpx::_new_data(const float *data, uint16_t size)
         }
 
         _buffer_used += size;
-        _buffer_start = (int16_t)(_buffer_start - size);
+        _buffer_start = static_cast<int16_t>(_buffer_start - size);
 
         if (_buffer_used > _buffer_size) {
             _buffer_used = _buffer_size;

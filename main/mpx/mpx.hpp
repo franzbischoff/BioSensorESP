@@ -31,7 +31,7 @@ namespace mp {
         #define pvPortCalloc calloc
     #endif
 
-    #define RAND() (int32_t)(esp_random())
+    #define RAND() static_cast<int32_t>(esp_random())
     #define LOG_DEBUG(tag, format, ...) ESP_LOGD(tag, format, ##__VA_ARGS__)
 #else
     #define pvPortCalloc calloc
