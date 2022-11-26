@@ -26,6 +26,7 @@ lint:
     - linters: [ALL]
       paths:
         - managed_components/**
+        - examples/**
     - linters: [prettier]
       paths:
         # half-html

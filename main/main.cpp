@@ -26,17 +26,6 @@
 #endif
 #include "mpx/mpx.hpp"
 
-#if defined(USE_AD8232_SENSOR)
-    #define DEFAULT_VREF 1100                    // Use adc2_vref_to_gpio() to obtain a better estimate
-    #define NO_OF_SAMPLES 64                     // Multisampling
-static esp_adc_cal_characteristics_t *adc_chars; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-// #if CONFIG_IDF_TARGET_ESP32
-static const adc1_channel_t CHANNEL = ADC_CHANNEL_PIN;
-static const adc_bits_width_t WIDTH = ADC_WIDTH_12Bit;
-static const adc_atten_t ATTEN = ADC_ATTEN_11db;
-static const adc_unit_t UNIT = ADC_UNIT_1;
-#endif
-
 #define SAMPLING_HZ SAMPLING_RATE_HZ
 #define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_HZ)
 #define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
@@ -122,16 +111,16 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
                 [[maybe_unused]] float *floss = mpx.get_floss();
                 [[maybe_unused]] float *matrix = mpx.get_matrix();
 
-                // if (esp_log_level_get(TAG) >= ESP_LOG_DEBUG) {
-                //   char log_buf[64];
-                //   for (uint16_t i = 0; i < recv_count; ++i) {
-                //     // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
-                //     //                matrix[floss_landmark + i]);
-                //     sprintf(log_buf, "%.1f %.2f", buffer[i], matrix[floss_landmark + i]); // NOLINT(cert-err33-c)
-                //     esp_rom_printf("%s\n", log_buf);                                      // indexes[floss_landmark +
-                //     i]);
-                //   }
-                // }
+                if (esp_log_level_get(TAG) >= ESP_LOG_DEBUG) {
+                    char log_buf[64];
+                    for (uint16_t i = 0; i < recv_count; ++i) {
+                        // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
+                        //                matrix[floss_landmark + i]);
+                        sprintf(log_buf, "%.2f %.2f", buffer[i], floss[floss_landmark + i]); // NOLINT(cert-err33-c)
+                        esp_rom_printf("%s\n", log_buf);                                     // indexes[floss_landmark +
+                        // i]);
+                    }
+                }
                 // ESP_LOGD(TAG, "[Consumer] %d", recv_count); // handle about 400 samples per second
                 if (recv_count > 30) {
                     delay_adjust -= 5;
@@ -153,16 +142,21 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
 }
 
 #if defined(USE_AD8232_SENSOR)
-/// @brief Task to read the signal from the sensor
+/// @brief Task to read the signal from the ecg sensor (12-bit ADC)
 /// @param pv_parameters pointer to the task parameters
 [[noreturn]] void task_read_signal(void *pv_parameters) // This is a task.
 {
     (void)pv_parameters;
 
+    const uint8_t no_of_samples = 64; // Multisampling
+    const adc1_channel_t channel = ADC_CHANNEL_PIN;
+    const adc_bits_width_t adc_width = ADC_WIDTH_12Bit;
+    const adc_atten_t adc_atten = ADC_ATTENUATION;
+
     TickType_t last_wake_time;
 
     uint16_t initial_counter = 0;
-    float ir_res;
+    float adc_res;
     const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
 
     // short period filter
@@ -171,12 +165,13 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     // large (wander) period filter
     const float l_alpha = powf(eps_f, 1.0F / WANDER_FILTER);
 
-    uint32_t ir_led;
+    uint32_t adc_reading;
+    bool sensor_started = false;
 
-    float ir_sum = 0.0F;
-    float ir_num = 0.0F;
-    float ir_sum2 = 0.0F;
-    float ir_num2 = 0.0F;
+    float adc_sum = 0.0F;
+    float adc_num = 0.0F;
+    float adc_sum2 = 0.0F;
+    float adc_num2 = 0.0F;
 
     // Check if TP is burned into eFuse
     if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
@@ -191,11 +186,14 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
         ESP_LOGD(TAG, "eFuse Vref: NOT supported");
     }
 
-    adc1_config_width(WIDTH);
-    adc1_config_channel_atten(CHANNEL, ATTEN);
+    adc1_config_width(adc_width);
+    adc1_config_channel_atten(channel, adc_atten);
 
+    #if defined(DEBUG)
+    const uint16_t default_vref = 1100; // Use adc2_vref_to_gpio() to obtain a better estimate
+    esp_adc_cal_characteristics_t *adc_chars;
     adc_chars = (esp_adc_cal_characteristics_t *)calloc(1, sizeof(esp_adc_cal_characteristics_t));
-    esp_adc_cal_value_t val_type = esp_adc_cal_characterize(UNIT, ATTEN, WIDTH, DEFAULT_VREF, adc_chars);
+    esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, adc_atten, adc_width, default_vref, adc_chars);
 
     if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
         ESP_LOGD(TAG, "Characterized using Two Point Value");
@@ -204,6 +202,7 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     } else {
         ESP_LOGD(TAG, "Characterized using Default Vref");
     }
+    #endif
 
     gpio_set_direction(POSITIVE_LO_PIN, GPIO_MODE_INPUT); // Setup for leads off detection LO +
     gpio_set_direction(NEGATIVE_LO_PIN, GPIO_MODE_INPUT); // Setup for leads off detection LO -
@@ -219,38 +218,61 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
 
         if ((gpio_get_level(POSITIVE_LO_PIN) == 1) || (gpio_get_level(NEGATIVE_LO_PIN) == 1)) {
-            ESP_LOGI(TAG, "!");
-            vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+            // leads off
+            ESP_LOGD(TAG, "!");
+            vTaskDelay((portTICK_PERIOD_MS * 50)); // for stability
         } else {
-            // send the value of analog input 0:
-            // AD8232 0-3v
-            // ADC_ATTEN_DB_11 150 mV ~ 2450 mV
-            //  users may connect a bypass capacitor (e.g. a 100 nF ceramic capacitor)
-            // 4095 for 12-bits, 2047 for 11-bits, 1023 for 10-bits, 511 for 9 bits
-            // https://docs.espressif.com/projects/esp-idf/en/v4.4.3/esp32/api-reference/peripherals/adc.html?highlight=gpio#minimizing-noise
-            uint32_t adc_reading = 0;
-            // Multisampling
-            for (int i = 0; i < NO_OF_SAMPLES; i++) {
-                adc_reading += adc1_get_raw(CHANNEL);
+            if (!sensor_started) {
+                sensor_started = true;
+                initial_counter = 0;
+
+                ESP_LOGD(TAG, "[Producer] Sensor started, now it can be used.");
             }
-            adc_reading /= NO_OF_SAMPLES;
-            ir_led = adc_reading;
+
+            // ADC_ATTEN_DB_6  150 mV ~ 1750 mV
+            // ADC_ATTEN_DB_11 150 mV ~ 2450 mV
+            adc_reading = 0;
+            // Multisampling
+            for (int i = 0; i < no_of_samples; i++) {
+                adc_reading += adc1_get_raw(channel);
+            }
+            adc_reading /= no_of_samples;
+
+            if (adc_reading < 500) {
+                // noise?
+                vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+                continue;
+            }
+
+    #if defined(DEBUG)
             // Convert adc_reading to voltage in mV
             uint32_t voltage = esp_adc_cal_raw_to_voltage(adc_reading, adc_chars);
-            ESP_LOGI(TAG, "Raw: %d\tVoltage: %dmV", adc_reading, voltage);
+            ESP_LOGD(TAG, "Raw: %d\tVoltage: %dmV", adc_reading, voltage);
+    #endif
 
-            ir_sum = ir_sum * alpha + (float)ir_led;
-            ir_num = ir_num * alpha + 1.0F;
-            ir_sum2 = ir_sum2 * l_alpha + (float)ir_led;
-            ir_num2 = ir_num2 * l_alpha + 1.0F;
-            ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
-            ir_res /= 20.0F;
+            adc_sum = adc_sum * alpha + (float)adc_reading;
+            adc_num = adc_num * alpha + 1.0F;
+            adc_sum2 = adc_sum2 * l_alpha + (float)adc_reading;
+            adc_num2 = adc_num2 * l_alpha + 1.0F;
+            adc_res = (adc_sum / adc_num - adc_sum2 / adc_num2); // subtract the mean
 
-            // if (ir_res > 50.0F || ir_res < -50.0F) {
-            //     continue;
-            // }
+            // value in mv scale is
+            // Vout = adc_res * 2450mV / 4095 (for ADC_ATTEN_11db) or adc_res * 0.5982906  0.921406F
+            // Vout = adc_res * 1750mV / 4095 (for ADC_ATTEN_6db)  or adc_res * 0.4273504  0.485196F
 
-            const UBaseType_t resbuf = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
+            // value in mV scale
+            if (adc_atten == ADC_ATTEN_11db) {
+                adc_res *= 0.921406F;
+            } else if (adc_atten == ADC_ATTEN_6db) {
+                adc_res *= 0.485196F;
+            }
+
+            if (adc_res > 150.0F || adc_res < -150.0F) {
+                vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+                continue;
+            }
+
+            const UBaseType_t resbuf = xRingbufferSend(ring_buf, &adc_res, sizeof(adc_res), (portTICK_PERIOD_MS * 100));
 
             if (resbuf == pdTRUE) {
                 if (!buffer_init) {
