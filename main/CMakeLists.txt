@@ -4,3 +4,5 @@ idf_component_register(
   SRCS ${app_sources}
   REQUIRES "freertos"
 )
+
+list(APPEND compile_options "-fsanitize=undefined" "-fno-sanitize=shift-base")

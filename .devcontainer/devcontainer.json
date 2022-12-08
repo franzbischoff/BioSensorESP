@@ -71,7 +71,7 @@
   },
   "runArgs": ["--privileged"],
   "postCreateCommand": [
-    "git config --global --unset-all gpg.program",
     "echo \"source /opt/esp/idf/export.sh > /dev/null 2>&1\" >> ~/.bashrc"
-  ]
+  ],
+  "postStartCommand": ["git config --global --unset-all gpg.program"]
 }

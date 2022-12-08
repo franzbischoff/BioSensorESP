@@ -14,7 +14,10 @@
 
 #define USE_AD8232_SENSOR /*!< Use the AD8232 sensor */
 // #define FILE_DATA
-#define LOG_CPU_LOAD /*!< Log CPU load */
+// #define LOAD_DATA_FROM_FILE
+// #define SAVE_DATA_TO_FILE
+
+// #define LOG_CPU_LOAD /*!< Log CPU load */
 // #define LOG_MEM_LOAD /*!< Log memory load */
 
 #define SAMPLING_RATE_HZ 250.0F /*!< Sampling rate of the reader task */
@@ -25,7 +28,7 @@
 #if defined(USE_AD8232_SENSOR)
     #define POSITIVE_LO_PIN GPIO_NUM_13
     #define NEGATIVE_LO_PIN GPIO_NUM_12
-    #define ADC_CHANNEL_PIN ADC1_CHANNEL_6 // GPIO34 if ADC1
+    #define ADC_CHANNEL_PIN ADC1_CHANNEL_5 // GPIO34 if ADC1
     #define ADC_ATTENUATION ADC_ATTEN_11db // 0-3.7V ADC_ATTEN_6b 0-1.98V
 #endif
 

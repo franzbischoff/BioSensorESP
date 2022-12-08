@@ -10,7 +10,8 @@ static const char TAG[] = "mpx";
 
 Mpx::Mpx(const uint16_t window_size, float ez, uint16_t time_constraint, const uint16_t buffer_size)
     : _window_size(window_size), _ez(ez), _buffer_size(buffer_size), _profile_len(buffer_size - _window_size + 1U),
-      _range(_profile_len - 1U), _exclusion_zone(static_cast<uint16_t>(lroundf((float)_window_size * _ez + __FLT_EPSILON__) + 1U)),
+      _range(_profile_len - 1U),
+      _exclusion_zone(static_cast<uint16_t>(lroundf((float)_window_size * _ez + __FLT_EPSILON__) + 1U)),
       _buffer_start((int16_t)buffer_size), _data_buffer((float *)pvPortCalloc(_buffer_size + 1U, sizeof(float))),
       _vmatrix_profile((float *)pvPortCalloc(_profile_len + 1U, sizeof(float))),
       _vprofile_index((int16_t *)pvPortCalloc(_profile_len + 1U, sizeof(int16_t))),

@@ -8,7 +8,7 @@
 #if defined(CONFIG_ESP32_SPIRAM_SUPPORT)
     #include "esp32/spiram.h"
 #endif
-#if defined(FILE_DATA)
+#if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     #include "esp_littlefs.h"
 #endif
 #include "esp_log.h"
@@ -57,8 +57,8 @@ static const char TAG[] = "main";
 static volatile bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-#if defined(FILE_DATA)
-static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+#if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
+static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 #endif
 
 ///   @brief Task to compute the matrix profile
@@ -79,17 +79,22 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
     mp::Mpx mpx(WINDOW_SIZE, 0.5F, 0U, HIST_SIZE);
     mpx.prune_buffer();
 
+#if defined(SAVE_DATA_TO_FILE)
+    // headers
+    fputs("\"data\",\"floss\"\n", file);
+#endif
+
     for (;;) // -H776 A Task shall never return or exit.
     {
         if (buffer_init) { // wait for buffer to be initialized
             recv_count = 0;
 
             for (uint16_t i = 0; i < BUFFER_SIZE; ++i) {
-                size_t item_size; // size in bytes (usually 4 bytes)
+                size_t item_size = 0; // size in bytes (usually 4 bytes)
                 float *data = static_cast<float *>(xRingbufferReceive(ring_buf, &item_size, 0));
 
                 if (item_size > 4) {
-                    ESP_LOGD(TAG, "Item_size: %u", item_size);
+                    ESP_LOGD(TAG, "Item_size: %d", item_size);
                 }
 
                 if (data != nullptr) {
@@ -116,8 +121,18 @@ static volatile FILE *file; // NOLINT(cppcoreguidelines-avoid-non-const-global-v
                     for (uint16_t i = 0; i < recv_count; ++i) {
                         // sprintf(log_buf, "%.1f %.2f %.2f", buffer[i], floss[floss_landmark + i],
                         //                matrix[floss_landmark + i]);
-                        sprintf(log_buf, "%.2f %.2f", buffer[i], floss[floss_landmark + i]); // NOLINT(cert-err33-c)
-                        esp_rom_printf("%s\n", log_buf);                                     // indexes[floss_landmark +
+                        sprintf(log_buf, "%.2f,%.2f\n", buffer[i], floss[floss_landmark + i]);
+#if defined(SAVE_DATA_TO_FILE)
+                        fputs(log_buf, file);
+                        // count++;
+
+                        // if (count >= 1000) {
+                        //     fflush(file);
+                        //     fclose(file);
+                        //     esp_restart();
+                        // }
+#endif
+                        esp_rom_printf("%s", log_buf); // indexes[floss_landmark +
                         // i]);
                     }
                 }
@@ -450,6 +465,16 @@ extern "C" {
 /// @brief main function
 [[noreturn]] void app_main(void)
 {
+#if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
+    esp_register_shutdown_handler([]() {
+        ESP_LOGI(TAG, "Shutdown handler called");
+        if (file != nullptr) {
+            fclose(file);
+            esp_vfs_littlefs_unregister("littlefs");
+        }
+    });
+#endif
+
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
     esp_log_level_set("mpx", ESP_LOG_ERROR);
 
@@ -490,13 +515,13 @@ extern "C" {
         esp_restart();
     }
 
-#if defined(FILE_DATA)
+#if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     ESP_LOGI(TAG, "Initializing LittleFS");
 
     esp_vfs_littlefs_conf_t const conf = {
         .base_path = "/littlefs",
         .partition_label = "littlefs",
-        .format_if_mount_failed = false,
+        .format_if_mount_failed = true,
         .dont_mount = false,
     };
 
@@ -512,7 +537,7 @@ extern "C" {
         } else {
             ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
         }
-        return;
+        esp_restart();
     }
 
     size_t total = 0, used = 0;
@@ -526,13 +551,75 @@ extern "C" {
         ESP_LOGE(TAG, "LittleFS not mounted");
     }
 
-    file = fopen("/littlefs/floss.csv", "r");
+    // #if defined(LOAD_DATA_FROM_FILE)
+    // file = fopen("/littlefs/recorded.csv", "r");
+
+    // if (file != nullptr) {
+    //     ESP_LOGD(TAG, "File exists");
+
+    //     char line[20];
+
+    //     ESP_LOGD(TAG, "Reading file");
+    //     while (fgets(line, sizeof(line), file) != nullptr) {
+    //         ESP_LOGD(TAG, "Line: %s", line);
+    //         vTaskDelay((portTICK_PERIOD_MS * 200));
+    //     }
+    //     ESP_LOGD(TAG, "Done Reading file");
+
+    //     fclose(file);
+    //     file = nullptr;
+    // }
+    // #elif defined(SAVE_DATA_TO_FILE)
+
+    char filename[32];
+    char idx[8];
+
+    // look up for the next file name
+    for (uint8_t i = 1; i <= 10; i++) {
+        sprintf(filename, "/littlefs/record%02u.csv", i);
+        file = fopen(filename, "r");
+        // file does not exist
+        if (file == nullptr) {
+            ESP_LOGI(TAG, "Opening for write file %02u", i);
+            file = fopen("/littlefs/last.txt", "w");
+            sprintf(idx, "%02u", i);
+            fputs(idx, file);
+            fclose(file);
+            file = fopen(filename, "w");
+            break;
+        }
+        // file exists, try the next one
+        fclose(file);
+        file = nullptr;
+    }
+
+    if (file == nullptr) {
+        ESP_LOGD(TAG, "All files exist.");
+
+        file = fopen("/littlefs/last.txt", "r");
+        fgets(idx, sizeof(idx), file);
+        // trunk-ignore(clang-tidy/cert-err34-c)
+        uint8_t i = (uint8_t)atoi(idx);
+
+        ++i;
+        if (i > 10)
+            i = 1;
+
+        sprintf(filename, "/littlefs/record%02u.csv", i);
+        ESP_LOGI(TAG, "Opening for write file %02u", i);
+        file = fopen("/littlefs/last.txt", "w");
+        sprintf(idx, "%02u", i);
+        fputs(idx, file);
+        fclose(file);
+        file = fopen(filename, "w");
+    }
 
     if (file == nullptr) {
         esp_vfs_littlefs_unregister(conf.partition_label);
-        ESP_LOGE(TAG, "Failed to open file for reading");
-        return;
+        ESP_LOGE(TAG, "Failed to open file for write");
+        esp_restart();
     }
+
 #endif
 
     ESP_LOGD(TAG, "Creating task 0");
