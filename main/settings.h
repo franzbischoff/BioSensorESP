@@ -12,10 +12,10 @@
 #ifndef SETTINGS_H_
 #define SETTINGS_H_
 
-#define USE_AD8232_SENSOR /*!< Use the AD8232 sensor */
+// #define USE_AD8232_SENSOR /*!< Use the AD8232 sensor */
 // #define FILE_DATA
-// #define LOAD_DATA_FROM_FILE
-// #define SAVE_DATA_TO_FILE
+// #define LOAD_DATA_FROM_FILE /*!< Load data from file */
+#define SAVE_DATA_TO_FILE /*!< Save data to file */
 
 // #define LOG_CPU_LOAD /*!< Log CPU load */
 // #define LOG_MEM_LOAD /*!< Log memory load */

@@ -11,15 +11,15 @@ lint:
   disabled:
     - include-what-you-use@0.18
   enabled:
-    - semgrep@0.122.0
-    - stylelint@14.15.0
+    - semgrep@1.1.0
+    - stylelint@14.16.0
     - yamllint@1.28.0
     - actionlint@1.6.22
-    - prettier@2.8.0
+    - prettier@2.8.1
     - hadolint@2.12.0
     - clang-tidy@14.0.0
     - clang-format@14.0.0
-    - gitleaks@8.15.1
+    - gitleaks@8.15.2
     - markdownlint@0.32.2
     - git-diff-check
   ignore:

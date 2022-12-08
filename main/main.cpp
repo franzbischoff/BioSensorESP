@@ -10,6 +10,8 @@
 #endif
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     #include "esp_littlefs.h"
+    #include "driver/touch_pad.h"
+    #define LOG_ROTATION_SIZE 30
 #endif
 #include "esp_log.h"
 #include "esp_spi_flash.h"
@@ -81,11 +83,26 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
 
 #if defined(SAVE_DATA_TO_FILE)
     // headers
+    if (file == nullptr) {
+        ESP_LOGE(TAG, "File is not open");
+        vTaskDelete(nullptr);
+    }
     fputs("\"data\",\"floss\"\n", file);
 #endif
 
     for (;;) // -H776 A Task shall never return or exit.
     {
+#if defined(SAVE_DATA_TO_FILE)
+        uint16_t touch_value;
+        touch_pad_read(TOUCH_PAD_NUM5, &touch_value);
+        if (touch_value < 500) {
+            ESP_LOGI(TAG, "Touch value: %d", touch_value);
+            fclose(file);
+            file = nullptr;
+            esp_system_abort("Touched\n");
+        }
+#endif
+
         if (buffer_init) { // wait for buffer to be initialized
             recv_count = 0;
 
@@ -123,17 +140,13 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
                         //                matrix[floss_landmark + i]);
                         sprintf(log_buf, "%.2f,%.2f\n", buffer[i], floss[floss_landmark + i]);
 #if defined(SAVE_DATA_TO_FILE)
+                        if (file == nullptr) {
+                            ESP_LOGE(TAG, "File is not open");
+                            vTaskDelete(nullptr);
+                        }
                         fputs(log_buf, file);
-                        // count++;
-
-                        // if (count >= 1000) {
-                        //     fflush(file);
-                        //     fclose(file);
-                        //     esp_restart();
-                        // }
 #endif
-                        esp_rom_printf("%s", log_buf); // indexes[floss_landmark +
-                        // i]);
+                        esp_rom_printf("%s", log_buf); // indexes[floss_landmark + i]);
                     }
                 }
                 // ESP_LOGD(TAG, "[Consumer] %d", recv_count); // handle about 400 samples per second
@@ -315,7 +328,7 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
     float ir_res;
     const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
 
-    #ifndef FILE_DATA
+    #if !defined(LOAD_DATA_FROM_FILE)
 
     // I2C
     const gpio_num_t i2c_scl = I2C_MASTER_SCL;
@@ -384,7 +397,27 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
     {
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
 
-    #ifndef FILE_DATA
+    #if defined(LOAD_DATA_FROM_FILE)
+        ir_res = 0.0F;
+
+        if (file != nullptr) {
+            char line[20];
+
+            if (fgets(line, sizeof(line), file) == nullptr) {
+                ESP_LOGI(TAG, "End of file reached, rewind");
+                rewind(file);
+                // file = nullptr;
+                // All done, unmount partition and disable LittleFS
+
+                // ESP_LOGI(TAG, "LittleFS unmounted");
+
+            } else {
+                float v = std::stof(line);
+                ir_res = v;
+            }
+        }
+    #else
+
         body = bio_hub.read_sensor();
         ir_led = body.ir_led;
 
@@ -410,52 +443,35 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
             ir_num2 = ir_num2 * l_alpha + 1.0F;
             ir_res = (ir_sum / ir_num - ir_sum2 / ir_num2);
             ir_res /= 20.0F;
-    #else
-
-        ir_res = 0.0F;
-
-        if (file != nullptr) {
-            char line[20];
-
-            if (fgets(line, sizeof(line), file) == nullptr) {
-                ESP_LOGI(TAG, "End of file reached, rewind");
-                rewind(file);
-                // file = nullptr;
-                // All done, unmount partition and disable LittleFS
-
-                // ESP_LOGI(TAG, "LittleFS unmounted");
-
-            } else {
-                float v = std::stof(line);
-                ir_res = v;
-            }
-        }
 
     #endif
 
-            if (ir_res > 50.0F || ir_res < -50.0F) {
-                continue;
-            }
+        if (ir_res > 50.0F || ir_res < -50.0F) {
+            continue;
+        }
 
-            const UBaseType_t resbuf = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
+        const UBaseType_t resbuf = xRingbufferSend(ring_buf, &ir_res, sizeof(ir_res), (portTICK_PERIOD_MS * 100));
 
-            if (resbuf == pdTRUE) {
-                if (!buffer_init) {
-                    if (++initial_counter >= BUFFER_SIZE) {
-                        buffer_init = true; // this is read by the receiver task
-                        ESP_LOGD(TAG, "[Producer] DEBUG: Buffer started, starting to compute");
-                    }
+        if (resbuf == pdTRUE) {
+            if (!buffer_init) {
+                if (++initial_counter >= BUFFER_SIZE) {
+                    buffer_init = true; // this is read by the receiver task
+                    ESP_LOGD(TAG, "[Producer] DEBUG: Buffer started, starting to compute");
                 }
-            } else {
-                ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
             }
-    #ifndef FILE_DATA
         } else {
-            // ESP_LOGD(TAG, "[Producer] IR: %d", body.irLed);
-            vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+            ESP_LOGD(TAG, "Failed to send item (timeout), %u", initial_counter);
         }
-    #endif
+    #if !defined(LOAD_DATA_FROM_FILE)
     }
+    // trunk-ignore(clang-tidy/readability-misleading-indentation)
+    else
+    {
+        // ESP_LOGD(TAG, "[Producer] IR: %d", body.irLed);
+        vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
+    }
+    #endif
+}
 }
 #endif
 
@@ -473,6 +489,10 @@ extern "C" {
             esp_vfs_littlefs_unregister("littlefs");
         }
     });
+
+    ESP_ERROR_CHECK(touch_pad_init());
+    touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
+    touch_pad_config(TOUCH_PAD_NUM5, 0);
 #endif
 
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
@@ -575,7 +595,7 @@ extern "C" {
     char idx[8];
 
     // look up for the next file name
-    for (uint8_t i = 1; i <= 10; i++) {
+    for (uint8_t i = 1; i <= LOG_ROTATION_SIZE; i++) {
         sprintf(filename, "/littlefs/record%02u.csv", i);
         file = fopen(filename, "r");
         // file does not exist
@@ -602,7 +622,7 @@ extern "C" {
         uint8_t i = (uint8_t)atoi(idx);
 
         ++i;
-        if (i > 10)
+        if (i > LOG_ROTATION_SIZE)
             i = 1;
 
         sprintf(filename, "/littlefs/record%02u.csv", i);
