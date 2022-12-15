@@ -37,9 +37,6 @@ jobs:
       security-events: write
     container: espressif/idf:${{ matrix.idf_ver }}
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
-        # academic work ${{ secrets.PVS_STUDIO_CREDENTIALS }}
       - name: Install tools
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -50,6 +47,17 @@ jobs:
           apt update
           apt install pvs-studio strace -y
           pvs-studio-analyzer credentials PVS-Studio Free FREE-FREE-FREE-FREE
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        # academic work ${{ secrets.PVS_STUDIO_CREDENTIALS }}
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: cpp
+          source-root: main
+
+      # ℹ️ Command-line programs to run using the OS shell.
+      # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
       - name: Build for ESP32
         env:
           PLATFORM: linux64
@@ -63,9 +71,12 @@ jobs:
           pvs-studio-analyzer analyze -c ./.vscode/pvsconfig.cfg -R ./.vscode/.pvsconfig -f build/compile_commands.json -j
       - name: Convert report
         run: |
-          plog-converter -t sarif -o pvs-report.sarif PVS-Studio.log
+          plog-converter -t sarif -o pvs-report.sarif build/PVS-Studio.log
       # - name: Publish report
       #   uses: github/codeql-action/upload-sarif@v2
       #   with:
       #     sarif_file: pvs-report.sarif
       #     category: PVS-Studio
+      # Performs a CodeQL analysis.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
