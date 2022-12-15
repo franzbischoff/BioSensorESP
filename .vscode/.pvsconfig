@@ -1,0 +1,28 @@
+//V_EXCLUDE_PATH */tests/*
+//V_EXCLUDE_PATH */lib/*
+//V_EXCLUDE_PATH */third-party/*
+//V_EXCLUDE_PATH */boost/*
+//V_EXCLUDE_PATH */zlib/*
+//V_EXCLUDE_PATH */png/*
+//V_EXCLUDE_PATH */libpng/*
+//V_EXCLUDE_PATH */pnglib/*
+//V_EXCLUDE_PATH */freetype/*
+//V_EXCLUDE_PATH */ImageMagick/*
+//V_EXCLUDE_PATH */jpeglib/*
+//V_EXCLUDE_PATH */libxml/*
+//V_EXCLUDE_PATH */libxslt/*
+//V_EXCLUDE_PATH */tifflib/*
+//V_EXCLUDE_PATH */wxWidgets/*
+//V_EXCLUDE_PATH */libtiff/*
+//V_EXCLUDE_PATH */mesa/*
+//V_EXCLUDE_PATH */cximage/*
+//V_EXCLUDE_PATH */bzip2-
+//V_EXCLUDE_PATH */bzip2/*
+//V_EXCLUDE_PATH */UE_*/Engine/Source/*
+//V_EXCLUDE_PATH *.tlh
+//V_EXCLUDE_PATH *.tli
+//V_EXCLUDE_PATH */managed_components/*
+//V_EXCLUDE_PATH */esp/idf/*
+//V_EXCLUDE_PATH */esp/tools/*
+//-V::X64
+//-V::122,126,201,202,203,3163,3164,2511,3539,2563,3551,2506,2575,2578,2600,3549,3554,2533,501,3504,3501,051

@@ -51,10 +51,10 @@ jobs:
           idf.py build
       - name: Analyze
         run: |
-          pvs-studio-analyzer analyze -f build/compile_commands.json -j
-      # - name: Convert report
-      #   run: |
-      #     plog-converter -t sarif -o pvs-report.sarif PVS-Studio.log
+          pvs-studio-analyzer analyze -c ./.vscode/pvsconfig.cfg -R ./.vscode/.pvsconfig -f build/compile_commands.json -j
+      - name: Convert report
+        run: |
+          plog-converter -t sarif -o pvs-report.sarif PVS-Studio.log
       # - name: Publish report
       #   uses: github/codeql-action/upload-sarif@v2
       #   with:
