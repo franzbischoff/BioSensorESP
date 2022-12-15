@@ -39,7 +39,7 @@ jobs:
       - name: Install tools
         run: |
           wget -q -O - https://files.pvs-studio.com/etc/pubkey.txt \
-            | sudo apt-key add -
+            | apt-key add -
           wget -O /etc/apt/sources.list.d/viva64.list \
             https://files.pvs-studio.com/etc/viva64.list
           apt update
