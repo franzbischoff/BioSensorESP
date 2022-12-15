@@ -55,6 +55,18 @@ RUN curl -sSL -o packages-microsoft-prod.deb "https://packages.microsoft.com/con
   && dpkg -i packages-microsoft-prod.deb \
   && rm packages-microsoft-prod.deb
 
+RUN curl -fsSL https://files.pvs-studio.com/etc/pubkey.txt  | apt-key add - \
+ && curl -sSL -o /etc/apt/sources.list.d/viva64.list https://files.pvs-studio.com/etc/viva64.list \
+ && apt-get update \
+ && apt-get install -y -q --no-install-recommends \
+  pvs-studio \
+  strace \
+  && rm -rf /var/lib/apt/lists/*
+
+# academic work
+RUN pvs-studio-analyzer credentials PVS-Studio Free FREE-FREE-FREE-FREE
+
+
 # installed dotnet for Astyle plugin. You'll get some warning about missing dotnet, but you can ignore it
 # RUN wget --no-verbose https://dot.net/v1/dotnet-install.sh \
 #   && chmod 755 dotnet-install.sh \

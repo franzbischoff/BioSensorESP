@@ -10,7 +10,6 @@
 #endif
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     #include "esp_littlefs.h"
-    #include "driver/touch_pad.h"
     #define LOG_ROTATION_SIZE 30
 #endif
 #include "esp_log.h"
@@ -19,6 +18,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
 #include "freertos/task.h"
+#include "driver/touch_pad.h"
+#include "soc/touch_sensor_channel.h"
 #if defined(USE_AD8232_SENSOR)
     #include "driver/gpio.h"
     #include "driver/adc.h"
@@ -58,10 +59,39 @@ static const char TAG[] = "main";
 //>> global variables
 static volatile bool buffer_init = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 static volatile RingbufHandle_t ring_buf; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static volatile bool is_running = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
 static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 #endif
+
+/// @brief used to initialize the touch pads threshold
+static void tp_set_thresholds()
+{
+    uint16_t touch_value;
+    uint16_t touch_sum = 0;
+    for (uint8_t i = 0; i < 10; i++) {
+        // sample some readings
+        touch_pad_read(TOUCH_PAD_GPIO12_CHANNEL, &touch_value);
+        touch_sum += touch_value;
+    }
+
+    ESP_ERROR_CHECK(touch_pad_set_thresh(TOUCH_PAD_GPIO12_CHANNEL, touch_sum * 2 / 30));
+}
+
+/// @brief Interrupt handler for the touch pads
+static void tp_rtc_intr(void *arg)
+{
+    uint32_t pad_intr = touch_pad_get_status();
+    // clear interrupt
+    touch_pad_clear_status();
+
+    // zero means no interrupt, any other value means a pad was touched
+    // caveat: 1 means channel 0 was touched
+    if ((pad_intr & (0x01 << TOUCH_PAD_GPIO12_CHANNEL)) != 0) {
+        is_running = !is_running; // toggle running state
+    }
+}
 
 ///   @brief Task to compute the matrix profile
 /// @param pv_parameters pointer to the task parameters
@@ -92,16 +122,11 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
 
     for (;;) // -H776 A Task shall never return or exit.
     {
-#if defined(SAVE_DATA_TO_FILE)
-        uint16_t touch_value;
-        touch_pad_read(TOUCH_PAD_NUM5, &touch_value);
-        if (touch_value < 500) {
-            ESP_LOGI(TAG, "Touch value: %d", touch_value);
-            fclose(file);
-            file = nullptr;
-            esp_system_abort("Touched\n");
+        while (!is_running) {
+            // User can pause the session
+            ESP_LOGD(TAG, "compute: paused");
+            vTaskDelay((portTICK_PERIOD_MS * 200));
         }
-#endif
 
         if (buffer_init) { // wait for buffer to be initialized
             recv_count = 0;
@@ -244,6 +269,11 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
     for (;;) // -H776 A Task shall never return or exit.
     {
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
+
+        while (!is_running) {
+            // User can pause the session
+            vTaskDelay((portTICK_PERIOD_MS * 200));
+        }
 
         if ((gpio_get_level(POSITIVE_LO_PIN) == 1) || (gpio_get_level(NEGATIVE_LO_PIN) == 1)) {
             // leads off
@@ -397,6 +427,12 @@ static FILE *file = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-
     {
         vTaskDelayUntil(&last_wake_time, (portTICK_PERIOD_MS * timer_interval)); // for stability
 
+        while (!is_running) {
+            // User can pause the session
+            body = bio_hub.read_sensor(); // keep reading the sensor to not overflow the buffer
+            vTaskDelay((portTICK_PERIOD_MS * timer_interval));
+        }
+
     #if defined(LOAD_DATA_FROM_FILE)
         ir_res = 0.0F;
 
@@ -489,11 +525,16 @@ extern "C" {
             esp_vfs_littlefs_unregister("littlefs");
         }
     });
+#endif
 
     ESP_ERROR_CHECK(touch_pad_init());
+    // For interrupt tp we need to set the touch sensor to FSM mode at 'TOUCH_FSM_MODE_TIMER'.
+    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER);
     touch_pad_set_voltage(TOUCH_HVOLT_2V7, TOUCH_LVOLT_0V5, TOUCH_HVOLT_ATTEN_1V);
-    touch_pad_config(TOUCH_PAD_NUM5, 0);
-#endif
+    touch_pad_config(TOUCH_PAD_GPIO12_CHANNEL, 0); // initialize the RTC IO
+    tp_set_thresholds();
+    touch_pad_isr_register(tp_rtc_intr, nullptr);
+    touch_pad_intr_enable();
 
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
     esp_log_level_set("mpx", ESP_LOG_ERROR);
@@ -570,6 +611,17 @@ extern "C" {
     } else {
         ESP_LOGE(TAG, "LittleFS not mounted");
     }
+
+#endif
+
+    ESP_LOGI(TAG, "System initialized, waiting for user input (touch)");
+
+    while (!is_running) {
+        vTaskDelay((portTICK_PERIOD_MS * 500));
+        ESP_LOGI(TAG, "main: paused");
+    }
+
+#if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
 
     // #if defined(LOAD_DATA_FROM_FILE)
     // file = fopen("/littlefs/recorded.csv", "r");
