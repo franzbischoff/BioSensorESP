@@ -5,9 +5,6 @@
 #include "settings.h"
 
 #include <cmath>
-#if defined(CONFIG_ESP32_SPIRAM_SUPPORT)
-    #include "esp32/spiram.h"
-#endif
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     #include "esp_littlefs.h"
     #define LOG_ROTATION_SIZE 30
@@ -29,24 +26,16 @@
 #endif
 #include "mpx/mpx.hpp"
 
-#define SAMPLING_HZ SAMPLING_RATE_HZ
-#define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_HZ)
-#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_HZ * FLOSS_LANDMARK_S))
+#define HIST_SIZE (uint16_t)(HISTORY_SIZE_S * SAMPLING_RATE_HZ)
+#define FLOSS_LANDMARK (HIST_SIZE - (SAMPLING_RATE_HZ * FLOSS_LANDMARK_S))
 #define BUFFER_SIZE (WINDOW_SIZE)
 #define RING_BUFFER_SIZE (BUFFER_SIZE + 20U) // queue must have a little more room
-
-#ifndef SHORT_FILTER
-    #define SHORT_FILTER ((float)(SAMPLING_HZ) / 10.0F)
-#endif
-#ifndef WANDER_FILTER
-    #define WANDER_FILTER ((float)(SAMPLING_HZ) / 2.0F)
-#endif
 
 // ESP_PLATFORM
 
 //>> multitask configurations
-[[noreturn]] void task_compute(void *pv_parameters);
-[[noreturn]] void task_read_signal(void *pv_parameters);
+void task_compute(void *pv_parameters);
+void task_read_signal(void *pv_parameters);
 
 typedef enum cores { CORE_0 = 0x00, CORE_1 = 0x01 } cores_t;
 
@@ -95,7 +84,7 @@ static void tp_rtc_intr(void *arg)
 
 ///   @brief Task to compute the matrix profile
 /// @param pv_parameters pointer to the task parameters
-[[noreturn]] void task_compute(void *pv_parameters) // This is a task.
+void task_compute(void *pv_parameters) // This is a task.
 {
     (void)pv_parameters;
 
@@ -197,7 +186,7 @@ static void tp_rtc_intr(void *arg)
 #if defined(USE_AD8232_SENSOR)
 /// @brief Task to read the signal from the ecg sensor (12-bit ADC)
 /// @param pv_parameters pointer to the task parameters
-[[noreturn]] void task_read_signal(void *pv_parameters) // This is a task.
+void task_read_signal(void *pv_parameters) // This is a task.
 {
     (void)pv_parameters;
 
@@ -210,7 +199,7 @@ static void tp_rtc_intr(void *arg)
 
     uint16_t initial_counter = 0;
     float adc_res;
-    const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
+    const uint32_t timer_interval = 1000U / SAMPLING_RATE_HZ; // 4ms = 250Hz
 
     // short period filter
     const float eps_f = 0.05F;
@@ -272,7 +261,9 @@ static void tp_rtc_intr(void *arg)
 
         while (!is_running) {
             // User can pause the session
-            vTaskDelay((portTICK_PERIOD_MS * 200));
+            // vTaskDelay((portTICK_PERIOD_MS * 200));
+            // for now, restar the session to save the files in flash
+            esp_restart();
         }
 
         if ((gpio_get_level(POSITIVE_LO_PIN) == 1) || (gpio_get_level(NEGATIVE_LO_PIN) == 1)) {
@@ -348,7 +339,7 @@ static void tp_rtc_intr(void *arg)
 #else
 /// @brief Task to read the signal from the sensor
 /// @param pv_parameters pointer to the task parameters
-[[noreturn]] void task_read_signal(void *pv_parameters) // This is a task.
+void task_read_signal(void *pv_parameters) // This is a task.
 {
     (void)pv_parameters;
 
@@ -356,7 +347,7 @@ static void tp_rtc_intr(void *arg)
 
     uint16_t initial_counter = 0;
     float ir_res;
-    const uint32_t timer_interval = 1000U / SAMPLING_HZ; // 4ms = 250Hz
+    const uint32_t timer_interval = 1000U / SAMPLING_RATE_HZ; // 4ms = 250Hz
 
     #if !defined(LOAD_DATA_FROM_FILE)
 
@@ -384,7 +375,6 @@ static void tp_rtc_intr(void *arg)
     maxim::Max32664Hub bio_hub(res_pin, mfio_pin);
     maxim::BioData body;
 
-    uint32_t ir_led;
     bool sensor_started = false;
 
     float ir_sum = 0.0F;
@@ -429,8 +419,10 @@ static void tp_rtc_intr(void *arg)
 
         while (!is_running) {
             // User can pause the session
-            body = bio_hub.read_sensor(); // keep reading the sensor to not overflow the buffer
-            vTaskDelay((portTICK_PERIOD_MS * timer_interval));
+            // body = bio_hub.read_sensor(); // keep reading the sensor to not overflow the buffer
+            // vTaskDelay((portTICK_PERIOD_MS * timer_interval));
+            // for now, restar the session to save the files in flash
+            esp_restart();
         }
 
     #if defined(LOAD_DATA_FROM_FILE)
@@ -454,8 +446,9 @@ static void tp_rtc_intr(void *arg)
         }
     #else
 
+        // cppcheck-suppress redundantAssignment
         body = bio_hub.read_sensor();
-        ir_led = body.ir_led;
+        uint32_t ir_led = body.ir_led;
 
         if (!sensor_started) {
             if (ir_led == 0) {
@@ -500,8 +493,7 @@ static void tp_rtc_intr(void *arg)
         }
     #if !defined(LOAD_DATA_FROM_FILE)
     }
-    // trunk-ignore(clang-tidy/readability-misleading-indentation)
-    else
+    else // NOLINT(readability-misleading-indentation)
     {
         // ESP_LOGD(TAG, "[Producer] IR: %d", body.irLed);
         vTaskDelay((portTICK_PERIOD_MS * 1)); // for stability
@@ -515,7 +507,7 @@ static void tp_rtc_intr(void *arg)
 extern "C" {
 #endif
 /// @brief main function
-[[noreturn]] void app_main(void)
+void app_main(void)
 {
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     esp_register_shutdown_handler([]() {
@@ -559,14 +551,12 @@ extern "C" {
     // I (228) spiram: SPI RAM mode: flash 40m sram 40m
     // I (233) spiram: PSRAM initialized, cache is in low/high (2-core) mode.
 
-#ifdef CONFIG_ESP32_SPIRAM_SUPPORT
-    if (esp_spiram_is_initialized()) {
-        ESP_LOGD(TAG, "%uMB of %s PSRAM", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
-                 (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
-    } else {
-        ESP_LOGD(TAG, "No PSRAM found");
-    }
-#endif
+    //     if (esp_spiram_is_initialized()) {
+    //         ESP_LOGD(TAG, "%uMB of %s PSRAM", esp_spiram_get_size() / (uint32_t)(1024 * 1024),
+    //                  (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "embedded" : "external");
+    //     } else {
+    //         ESP_LOGD(TAG, "No PSRAM found");
+    //     }
 
     // Initialize NVS.
     ring_buf = xRingbufferCreateNoSplit(sizeof(float), RING_BUFFER_SIZE);
@@ -603,6 +593,11 @@ extern "C" {
 
     size_t total = 0, used = 0;
     ret = esp_littlefs_info(conf.partition_label, &total, &used);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read LittleFS partition information (%s)", esp_err_to_name(ret));
+        esp_restart();
+    }
 
     ESP_LOGI(TAG, "LittleFS: %u / %u", used, total);
 
@@ -670,8 +665,7 @@ extern "C" {
 
         file = fopen("/littlefs/last.txt", "r");
         fgets(idx, sizeof(idx), file);
-        // trunk-ignore(clang-tidy/cert-err34-c)
-        uint8_t i = (uint8_t)atoi(idx);
+        uint8_t i = (uint8_t)atoi(idx); // NOLINT (clang-tidy/cert-err34-c)
 
         ++i;
         if (i > LOG_ROTATION_SIZE)

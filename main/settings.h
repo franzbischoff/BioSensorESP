@@ -12,8 +12,7 @@
 #ifndef SETTINGS_H_
 #define SETTINGS_H_
 
-// #define USE_AD8232_SENSOR /*!< Use the AD8232 sensor */
-// #define FILE_DATA
+#define USE_AD8232_SENSOR /*!< Use the AD8232 sensor */
 // #define LOAD_DATA_FROM_FILE /*!< Load data from file */
 #define SAVE_DATA_TO_FILE /*!< Save data to file */
 
@@ -24,6 +23,9 @@
 #define WINDOW_SIZE 100U        /*!< Size of the sliding window */
 #define HISTORY_SIZE_S 20U      /*!< Size of the history buffer in seconds */
 #define FLOSS_LANDMARK_S 10U    /*!< Size of the FLOSS landmark in seconds */
+
+#define SHORT_FILTER ((float)(SAMPLING_RATE_HZ) / 10.0F)
+#define WANDER_FILTER ((float)(SAMPLING_RATE_HZ) / 2.0F)
 
 #if defined(USE_AD8232_SENSOR)
     #define POSITIVE_LO_PIN GPIO_NUM_13

@@ -12,15 +12,14 @@
 #ifndef MPX_MPX_HPP_
 #define MPX_MPX_HPP_
 
-#ifdef ESP_PLATFORM
-    #include <cmath>
-    #include <cstdio>
-    #include <cstdlib>
-    #include <memory>
-    #include "esp_log.h"
-    #include "esp_random.h"
-    #include "freertos/FreeRTOS.h"
-#endif
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
+#include <memory>
+#include "esp_log.h"
+#include "esp_random.h"
+#include "freertos/FreeRTOS.h"
 
 namespace mp {
 

@@ -50,6 +50,7 @@ partition_table
 
 dev
 
+.env
 compile_commands.json
 **/.component_hash
 **/dist/**
