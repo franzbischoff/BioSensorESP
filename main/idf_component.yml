@@ -1,7 +1,7 @@
 version: 0.9.0
 description: Bio Sensor
 dependencies:
-  idf: ">=4.4.0"
+  idf: "^4.4.0"
   joltwallet/littlefs:
     version: ">=1.5.0"
   franzbischoff/max32664-hub:
