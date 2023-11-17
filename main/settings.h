@@ -30,8 +30,9 @@
 #if defined(USE_AD8232_SENSOR)
     #define POSITIVE_LO_PIN GPIO_NUM_13
     #define NEGATIVE_LO_PIN GPIO_NUM_12
-    #define ADC_CHANNEL_PIN ADC1_CHANNEL_5 // GPIO34 if ADC1
-    #define ADC_ATTENUATION ADC_ATTEN_11db // 0-3.7V ADC_ATTEN_6b 0-1.98V
+    #define ADC_CHANNEL_PIN ADC_CHANNEL_5   // GPIO34 if ADC1
+    #define ADC_BITWITDH ADC_BITWIDTH_12    // default may not be 12bits
+    #define ADC_ATTENUATION ADC_ATTEN_DB_12 // 0-3.7V ADC_ATTEN_6b 0-1.98V
 #endif
 
 // #define DEBUG

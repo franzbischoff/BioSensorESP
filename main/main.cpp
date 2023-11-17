@@ -10,7 +10,8 @@
     #define LOG_ROTATION_SIZE 30
 #endif
 #include "esp_log.h"
-#include "esp_spi_flash.h"
+#include "spi_flash_mmap.h"
+#include "esp_chip_info.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/ringbuf.h"
@@ -19,8 +20,9 @@
 #include "soc/touch_sensor_channel.h"
 #if defined(USE_AD8232_SENSOR)
     #include "driver/gpio.h"
-    #include "driver/adc.h"
-    #include "esp_adc_cal.h"
+    #include "esp_adc/adc_oneshot.h"
+    #include "esp_adc/adc_cali.h"
+    #include "esp_adc/adc_cali_scheme.h"
 #else
     #include "max32664.hpp"
 #endif
@@ -184,16 +186,81 @@ void task_compute(void *pv_parameters) // This is a task.
 }
 
 #if defined(USE_AD8232_SENSOR)
+/*---------------------------------------------------------------
+        ADC Calibration
+---------------------------------------------------------------*/
+static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_bitwidth_t width, adc_atten_t atten,
+                                 adc_cali_handle_t *out_handle)
+{
+    adc_cali_handle_t handle = NULL;
+    esp_err_t ret = ESP_FAIL;
+    bool calibrated = false;
+
+    #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+    if (!calibrated) {
+        ESP_LOGI(TAG, "calibration scheme version is %s", "Curve Fitting");
+        adc_cali_curve_fitting_config_t cali_config = {
+            .unit_id = unit,
+            .chan = channel,
+            .atten = atten,
+            .bitwidth = width,
+        };
+        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
+        if (ret == ESP_OK) {
+            calibrated = true;
+        }
+    }
+    #endif
+
+    #if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+    if (!calibrated) {
+        ESP_LOGI(TAG, "calibration scheme version is %s", "Line Fitting");
+        adc_cali_line_fitting_config_t cali_config = {
+            .unit_id = unit, .atten = atten, .bitwidth = width, .default_vref = 1100};
+        ret = adc_cali_create_scheme_line_fitting(&cali_config, &handle);
+        if (ret == ESP_OK) {
+            calibrated = true;
+        }
+    }
+    #endif
+
+    *out_handle = handle;
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Calibration Success");
+    } else if (ret == ESP_ERR_NOT_SUPPORTED || !calibrated) {
+        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration");
+    } else {
+        ESP_LOGE(TAG, "Invalid arg or no memory");
+    }
+
+    return calibrated;
+}
+
+// static void adc_calibration_deinit(adc_cali_handle_t handle)
+// {
+//     #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+//     ESP_LOGI(TAG, "deregister %s calibration scheme", "Curve Fitting");
+//     ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(handle));
+
+//     #elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+//     ESP_LOGI(TAG, "deregister %s calibration scheme", "Line Fitting");
+//     ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(handle));
+//     #endif
+// }
+
 /// @brief Task to read the signal from the ecg sensor (12-bit ADC)
 /// @param pv_parameters pointer to the task parameters
 void task_read_signal(void *pv_parameters) // This is a task.
 {
     (void)pv_parameters;
 
-    const uint8_t no_of_samples = 64; // Multisampling
-    const adc1_channel_t channel = ADC_CHANNEL_PIN;
-    const adc_bits_width_t adc_width = ADC_WIDTH_12Bit;
+    // const uint8_t no_of_samples = 64; // Multisampling
+    const adc_channel_t channel = ADC_CHANNEL_PIN;
+    const adc_bitwidth_t adc_width = ADC_BITWITDH;
     const adc_atten_t adc_atten = ADC_ATTENUATION;
+    adc_oneshot_unit_handle_t adc1_handle;
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT_1, .clk_src = ADC_RTC_CLK_SRC_RC_FAST, .ulp_mode = ADC_ULP_MODE_DISABLE};
 
     TickType_t last_wake_time;
 
@@ -207,7 +274,8 @@ void task_read_signal(void *pv_parameters) // This is a task.
     // large (wander) period filter
     const float l_alpha = powf(eps_f, 1.0F / WANDER_FILTER);
 
-    uint32_t adc_reading;
+    intptr_t adc_reading;
+    intptr_t adc_voltage;
     bool sensor_started = false;
 
     float adc_sum = 0.0F;
@@ -215,21 +283,15 @@ void task_read_signal(void *pv_parameters) // This is a task.
     float adc_sum2 = 0.0F;
     float adc_num2 = 0.0F;
 
-    // Check if TP is burned into eFuse
-    if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
-        ESP_LOGD(TAG, "eFuse Two Point: Supported");
-    } else {
-        ESP_LOGD(TAG, "eFuse Two Point: NOT supported");
-    }
-    // Check Vref is burned into eFuse
-    if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_VREF) == ESP_OK) {
-        ESP_LOGD(TAG, "eFuse Vref: Supported");
-    } else {
-        ESP_LOGD(TAG, "eFuse Vref: NOT supported");
-    }
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
-    adc1_config_width(adc_width);
-    adc1_config_channel_atten(channel, adc_atten);
+    adc_oneshot_chan_cfg_t config = {.atten = adc_atten, .bitwidth = adc_width};
+
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, channel, &config));
+
+    adc_cali_handle_t adc1_cali_chan0_handle = NULL;
+    bool do_calibration1_chan0 =
+        adc_calibration_init(ADC_UNIT_1, channel, adc_width, adc_atten, &adc1_cali_chan0_handle);
 
     #if defined(DEBUG)
     const uint16_t default_vref = 1100; // Use adc2_vref_to_gpio() to obtain a better estimate
@@ -282,10 +344,16 @@ void task_read_signal(void *pv_parameters) // This is a task.
             // ADC_ATTEN_DB_11 150 mV ~ 2450 mV
             adc_reading = 0;
             // Multisampling
-            for (int i = 0; i < no_of_samples; i++) {
-                adc_reading += adc1_get_raw(channel);
+            // for (int i = 0; i < no_of_samples; i++) {
+            // adc_reading += adc1_get_raw(channel);
+            ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, channel, &adc_reading));
+            ESP_LOGI(TAG, "ADC%d Channel[%d] Raw Data: %d", ADC_UNIT_1 + 1, channel, adc_reading);
+            if (do_calibration1_chan0) {
+                ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan0_handle, adc_reading, &adc_voltage));
+                ESP_LOGI(TAG, "ADC%d Channel[%d] Cali Voltage: %d mV", ADC_UNIT_1 + 1, channel, adc_voltage);
             }
-            adc_reading /= no_of_samples;
+            // }
+            // adc_reading /= no_of_samples;
 
             if (adc_reading < 500) {
                 // noise?
@@ -310,9 +378,9 @@ void task_read_signal(void *pv_parameters) // This is a task.
             // Vout = adc_res * 1750mV / 4095 (for ADC_ATTEN_6db)  or adc_res * 0.4273504  0.485196F
 
             // value in mV scale
-            if (adc_atten == ADC_ATTEN_11db) {
+            if (adc_atten == ADC_ATTEN_DB_12) {
                 adc_res *= 0.921406F;
-            } else if (adc_atten == ADC_ATTEN_6db) {
+            } else if (adc_atten == ADC_ATTEN_DB_6) {
                 adc_res *= 0.485196F;
             }
 
@@ -531,8 +599,8 @@ void app_main(void)
     esp_log_level_set(TAG, ESP_LOG_VERBOSE);
     esp_log_level_set("mpx", ESP_LOG_ERROR);
 
-    ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
-    ESP_LOGD(TAG, "Max alloc Heap: %u", esp_get_minimum_free_heap_size());
+    // ESP_LOGD(TAG, "Heap: %u", esp_get_free_heap_size());
+    // ESP_LOGD(TAG, "Max alloc Heap: %u", esp_get_minimum_free_heap_size());
     ESP_LOGD(TAG, "SDK version: %s", esp_get_idf_version());
 
     /* Print chip information */
@@ -543,8 +611,8 @@ void app_main(void)
              (chip_info.features & CHIP_FEATURE_BLE) ? "/BLE" : "",
              (chip_info.features & CHIP_FEATURE_IEEE802154) ? "/802.15.4" : "");
 
-    ESP_LOGD(TAG, "%uMB of %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
-             (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
+    // ESP_LOGD(TAG, "%uMB of %s flash", spi_flash_get_chip_size() / (uint32_t)(1024 * 1024),
+    //          (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
 
     // I (228) psram: This chip is ESP32-D0WD
     // I (228) spiram: Found 64MBit SPI RAM device
@@ -569,12 +637,13 @@ void app_main(void)
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     ESP_LOGI(TAG, "Initializing LittleFS");
 
-    esp_vfs_littlefs_conf_t const conf = {
-        .base_path = "/littlefs",
-        .partition_label = "littlefs",
-        .format_if_mount_failed = true,
-        .dont_mount = false,
-    };
+    esp_vfs_littlefs_conf_t const conf = {.base_path = "/littlefs",
+                                          .partition_label = "littlefs",
+                                          .partition = NULL,
+                                          .format_if_mount_failed = true,
+                                          .read_only = false,
+                                          .dont_mount = false,
+                                          .grow_on_mount = true};
 
     // Use settings defined above to initialize and mount LittleFS filesystem.
     // Note: esp_vfs_littlefs_register is an all-in-one convenience function.
