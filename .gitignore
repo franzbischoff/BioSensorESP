@@ -50,6 +50,8 @@ partition_table
 
 dev
 
+.env
+compile_commands.json
 **/.component_hash
 **/dist/**
 docs/html
@@ -58,4 +60,5 @@ sdkconfig
 sdkconfig.old
 dependencies.lock
 managed_components
+.vscode-ctags
 .vscode*/**

@@ -47,6 +47,7 @@ int sampleVal;
 Max32664_Hub bioHub(resPin, mfioPin);
 
 bioData body;
+
 // ^^^^^^^^^
 // What's this!? This is a type (like "int", "byte", "long") unique to the SparkFun
 // Pulse Oximeter and Heart Rate Monitor. Unlike those other types it holds
@@ -63,105 +64,105 @@ bioData body;
 // body.oxygen     - Blood oxygen level
 // body.status     - Has a finger been sensed?
 
-void setup() {
-
-  Serial.begin(115200);
+void setup()
+{
+    Serial.begin(115200);
 
 #ifdef ARDUINO_ESP32_DEV
-  delay(2000); // delay for printing after reset
-  Serial.println("ARDUINO_ESP32_DEV");
+    delay(2000); // delay for printing after reset
+    Serial.println("ARDUINO_ESP32_DEV");
 #endif
 
-  Wire.begin();
-  int result = bioHub.begin();
-  if (result == 0) // Zero errors!
-    Serial.println("Sensor started!");
+    Wire.begin();
+    int result = bioHub.begin();
+    if (result == 0) // Zero errors!
+        Serial.println("Sensor started!");
 
-  Serial.println("Configuring Sensor....");
-  int error = bioHub.configSensorBpm(MODE_ONE); // Configure Sensor and BPM mode , MODE_TWO also available
-  if (error == 0) {                             // Zero errors.
-    Serial.println("Sensor configured.");
-  } else {
-    Serial.println("Error configuring sensor.");
-    Serial.print("Error: ");
-    Serial.println(error);
-  }
+    Serial.println("Configuring Sensor....");
+    int error = bioHub.configSensorBpm(MODE_ONE); // Configure Sensor and BPM mode , MODE_TWO also available
+    if (error == 0) {                             // Zero errors.
+        Serial.println("Sensor configured.");
+    } else {
+        Serial.println("Error configuring sensor.");
+        Serial.print("Error: ");
+        Serial.println(error);
+    }
 
-  // Set pulse width.
-  error = bioHub.setPulseWidth(width);
-  if (error == 0) { // Zero errors.
-    Serial.println("Pulse Width Set.");
-  } else {
-    Serial.println("Could not set Pulse Width.");
-    Serial.print("Error: ");
-    Serial.println(error);
-  }
+    // Set pulse width.
+    error = bioHub.setPulseWidth(width);
+    if (error == 0) { // Zero errors.
+        Serial.println("Pulse Width Set.");
+    } else {
+        Serial.println("Could not set Pulse Width.");
+        Serial.print("Error: ");
+        Serial.println(error);
+    }
 
-  // Check that the pulse width was set.
-  pulseWidthVal = bioHub.readPulseWidth();
-  Serial.print("Pulse Width: ");
-  Serial.println(pulseWidthVal);
+    // Check that the pulse width was set.
+    pulseWidthVal = bioHub.readPulseWidth();
+    Serial.print("Pulse Width: ");
+    Serial.println(pulseWidthVal);
 
-  // Set sample rate per second. Remember that not every sample rate is
-  // available with every pulse width. Check hookup guide for more information.
-  error = bioHub.setSampleRate(samples);
-  if (error == 0) { // Zero errors.
-    Serial.println("Sample Rate Set.");
-  } else {
-    Serial.println("Could not set Sample Rate!");
-    Serial.print("Error: ");
-    Serial.println(error);
-  }
+    // Set sample rate per second. Remember that not every sample rate is
+    // available with every pulse width. Check hookup guide for more information.
+    error = bioHub.setSampleRate(samples);
+    if (error == 0) { // Zero errors.
+        Serial.println("Sample Rate Set.");
+    } else {
+        Serial.println("Could not set Sample Rate!");
+        Serial.print("Error: ");
+        Serial.println(error);
+    }
 
-  // bioHub.set_report_period(100);
+    // bioHub.set_report_period(100);
 
-  // Check sample rate.
-  sampleVal = bioHub.readSampleRate();
-  Serial.print("Sample rate is set to: ");
-  Serial.println(sampleVal);
+    // Check sample rate.
+    sampleVal = bioHub.readSampleRate();
+    Serial.print("Sample rate is set to: ");
+    Serial.println(sampleVal);
 
-  // Data lags a bit behind the sensor, if you're finger is on the sensor when
-  // it's being configured this delay will give some time for the data to catch
-  // up.
-  //  Serial.println("Loading up the buffer with data....");
-  //  delay(4000);
+    // Data lags a bit behind the sensor, if you're finger is on the sensor when
+    // it's being configured this delay will give some time for the data to catch
+    // up.
+    //  Serial.println("Loading up the buffer with data....");
+    //  delay(4000);
 }
 
-void loop() {
+void loop()
+{
+    uint16_t t = millis();
+    static uint16_t t_old = 0;
+    int16_t t_diff;
 
-  uint16_t t = millis();
-  static uint16_t t_old = 0;
-  int16_t t_diff;
+    // Information from the readSensor function will be saved to our "body"
+    // variable.
 
-  // Information from the readSensor function will be saved to our "body"
-  // variable.
+    uint8_t samples = bioHub.numSamplesOutFifo();
 
-  uint8_t samples = bioHub.numSamplesOutFifo();
+    // read all samples in fifo and use most recent one
+    while (samples) {
+        body = bioHub.readSensorBpm();
+        samples--;
+    }
 
-  // read all samples in fifo and use most recent one
-  while (samples) {
-    body = bioHub.readSensorBpm();
-    samples--;
-  }
+    t_diff = t - t_old;
+    if (t_diff >= 500) {
+        t_old += 500;
 
-  t_diff = t - t_old;
-  if (t_diff >= 500) {
-    t_old += 500;
+        //      Serial.print(samples);
+        //      Serial.print(",");
+        Serial.print(body.heartRate);
+        Serial.print(",");
+        Serial.println(body.oxygen);
 
-    //      Serial.print(samples);
-    //      Serial.print(",");
-    Serial.print(body.heartRate);
-    Serial.print(",");
-    Serial.println(body.oxygen);
+        samples = bioHub.numSamplesOutFifo();
+    }
 
-    samples = bioHub.numSamplesOutFifo();
-  }
+    // clear fifo before delay
+    while (samples) {
+        body = bioHub.readSensorBpm();
+        samples--;
+    }
 
-  // clear fifo before delay
-  while (samples) {
-    body = bioHub.readSensorBpm();
-    samples--;
-  }
-
-  delay(10);
+    delay(10);
 }
