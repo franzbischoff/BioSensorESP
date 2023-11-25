@@ -73,7 +73,7 @@ static void tp_set_thresholds()
 /// @brief Interrupt handler for the touch pads
 static void tp_rtc_intr(void *arg)
 {
-    uint32_t pad_intr = touch_pad_get_status();
+    const uint32_t pad_intr = touch_pad_get_status();
     // clear interrupt
     touch_pad_clear_status();
 
@@ -105,7 +105,7 @@ void task_compute(void *pv_parameters) // This is a task.
 #if defined(SAVE_DATA_TO_FILE)
     // headers
     if (file == nullptr) {
-        ESP_LOGE(TAG, "File is not open");
+        ESP_LOGE(TAG, "File is not open"); //-V2507
         vTaskDelete(nullptr);
     }
     fputs("\"data\",\"floss\"\n", file);
@@ -115,7 +115,7 @@ void task_compute(void *pv_parameters) // This is a task.
     {
         while (!is_running) {
             // User can pause the session
-            ESP_LOGD(TAG, "compute: paused");
+            ESP_LOGD(TAG, "compute: paused"); //-V2507
             vTaskDelay((portTICK_PERIOD_MS * 200));
         }
 
@@ -127,7 +127,7 @@ void task_compute(void *pv_parameters) // This is a task.
                 float *data = static_cast<float *>(xRingbufferReceive(ring_buf, &item_size, 0));
 
                 if (item_size > 4) {
-                    ESP_LOGD(TAG, "Item_size: %d", item_size);
+                    ESP_LOGD(TAG, "Item_size: %d", item_size); //-V2507
                 }
 
                 if (data != nullptr) {
@@ -157,7 +157,7 @@ void task_compute(void *pv_parameters) // This is a task.
                         sprintf(log_buf, "%.2f,%.2f\n", buffer[i], floss[floss_landmark + i]);
 #if defined(SAVE_DATA_TO_FILE)
                         if (file == nullptr) {
-                            ESP_LOGE(TAG, "File is not open");
+                            ESP_LOGE(TAG, "File is not open"); //-V2507
                             vTaskDelete(nullptr);
                         }
                         fputs(log_buf, file);
@@ -192,7 +192,7 @@ void task_compute(void *pv_parameters) // This is a task.
 static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_bitwidth_t width, adc_atten_t atten,
                                  adc_cali_handle_t *out_handle)
 {
-    adc_cali_handle_t handle = NULL;
+    adc_cali_handle_t handle = nullptr;
     esp_err_t ret = ESP_FAIL;
     bool calibrated = false;
 
@@ -214,8 +214,8 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_bit
 
     #if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
     if (!calibrated) {
-        ESP_LOGI(TAG, "calibration scheme version is %s", "Line Fitting");
-        adc_cali_line_fitting_config_t cali_config = {
+        ESP_LOGI(TAG, "calibration scheme version is %s", "Line Fitting"); //-V2507
+        const adc_cali_line_fitting_config_t cali_config = {
             .unit_id = unit, .atten = atten, .bitwidth = width, .default_vref = 1100};
         ret = adc_cali_create_scheme_line_fitting(&cali_config, &handle);
         if (ret == ESP_OK) {
@@ -226,9 +226,9 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_bit
 
     *out_handle = handle;
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Calibration Success");
+        ESP_LOGI(TAG, "Calibration Success"); //-V2507
     } else if (ret == ESP_ERR_NOT_SUPPORTED || !calibrated) {
-        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration");
+        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration"); //-V2507
     } else {
         ESP_LOGE(TAG, "Invalid arg or no memory");
     }
@@ -259,7 +259,7 @@ void task_read_signal(void *pv_parameters) // This is a task.
     const adc_bitwidth_t adc_width = ADC_BITWITDH;
     const adc_atten_t adc_atten = ADC_ATTENUATION;
     adc_oneshot_unit_handle_t adc1_handle;
-    adc_oneshot_unit_init_cfg_t init_config1 = {
+    const adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1, .clk_src = ADC_RTC_CLK_SRC_RC_FAST, .ulp_mode = ADC_ULP_MODE_DISABLE};
 
     TickType_t last_wake_time;
@@ -285,12 +285,12 @@ void task_read_signal(void *pv_parameters) // This is a task.
 
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
-    adc_oneshot_chan_cfg_t config = {.atten = adc_atten, .bitwidth = adc_width};
+    const adc_oneshot_chan_cfg_t config = {.atten = adc_atten, .bitwidth = adc_width};
 
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, channel, &config));
 
-    adc_cali_handle_t adc1_cali_chan0_handle = NULL;
-    bool do_calibration1_chan0 =
+    adc_cali_handle_t adc1_cali_chan0_handle = nullptr;
+    const bool do_calibration1_chan0 =
         adc_calibration_init(ADC_UNIT_1, channel, adc_width, adc_atten, &adc1_cali_chan0_handle);
 
     #if defined(DEBUG)
@@ -330,7 +330,7 @@ void task_read_signal(void *pv_parameters) // This is a task.
 
         if ((gpio_get_level(POSITIVE_LO_PIN) == 1) || (gpio_get_level(NEGATIVE_LO_PIN) == 1)) {
             // leads off
-            ESP_LOGD(TAG, "!");
+            ESP_LOGD(TAG, "!");                    //-V2507
             vTaskDelay((portTICK_PERIOD_MS * 50)); // for stability
         } else {
             if (!sensor_started) {
@@ -579,7 +579,7 @@ void app_main(void)
 {
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
     esp_register_shutdown_handler([]() {
-        ESP_LOGI(TAG, "Shutdown handler called");
+        ESP_LOGI(TAG, "Shutdown handler called"); //-V2507
         if (file != nullptr) {
             fclose(file);
             esp_vfs_littlefs_unregister("littlefs");
@@ -635,11 +635,11 @@ void app_main(void)
     }
 
 #if defined(SAVE_DATA_TO_FILE) || defined(LOAD_DATA_FROM_FILE)
-    ESP_LOGI(TAG, "Initializing LittleFS");
+    ESP_LOGI(TAG, "Initializing LittleFS"); //-V2507
 
     esp_vfs_littlefs_conf_t const conf = {.base_path = "/littlefs",
                                           .partition_label = "littlefs",
-                                          .partition = NULL,
+                                          .partition = nullptr,
                                           .format_if_mount_failed = true,
                                           .read_only = false,
                                           .dont_mount = false,
@@ -716,7 +716,7 @@ void app_main(void)
         file = fopen(filename, "r");
         // file does not exist
         if (file == nullptr) {
-            ESP_LOGI(TAG, "Opening for write file %02u", i);
+            ESP_LOGI(TAG, "Opening for write file %02u", i); //-V2507
             file = fopen("/littlefs/last.txt", "w");
             sprintf(idx, "%02u", i);
             fputs(idx, file);
@@ -733,19 +733,23 @@ void app_main(void)
         ESP_LOGD(TAG, "All files exist.");
 
         file = fopen("/littlefs/last.txt", "r");
-        fgets(idx, sizeof(idx), file);
-        uint8_t i = (uint8_t)atoi(idx); // NOLINT (clang-tidy/cert-err34-c)
+        if (file != nullptr) {
+            fgets(idx, sizeof(idx), file);
+            uint8_t i = (uint8_t)atoi(idx); // NOLINT (clang-tidy/cert-err34-c)
 
-        ++i;
-        if (i > LOG_ROTATION_SIZE)
-            i = 1;
+            ++i;
+            if (i > LOG_ROTATION_SIZE)
+                i = 1;
 
-        sprintf(filename, "/littlefs/record%02u.csv", i);
-        ESP_LOGI(TAG, "Opening for write file %02u", i);
-        file = fopen("/littlefs/last.txt", "w");
-        sprintf(idx, "%02u", i);
-        fputs(idx, file);
-        fclose(file);
+            sprintf(filename, "/littlefs/record%02u.csv", i);
+            ESP_LOGI(TAG, "Opening for write file %02u", i); //-V2507
+            file = fopen("/littlefs/last.txt", "w");
+            if (file != nullptr) {
+                sprintf(idx, "%02u", i);
+                fputs(idx, file);
+                fclose(file);
+            }
+        }
         file = fopen(filename, "w");
     }
 

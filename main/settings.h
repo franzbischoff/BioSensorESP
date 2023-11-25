@@ -19,10 +19,10 @@
 // #define LOG_CPU_LOAD /*!< Log CPU load */
 // #define LOG_MEM_LOAD /*!< Log memory load */
 
-#define SAMPLING_RATE_HZ 250.0F /*!< Sampling rate of the reader task */
-#define WINDOW_SIZE 100U        /*!< Size of the sliding window */
-#define HISTORY_SIZE_S 20U      /*!< Size of the history buffer in seconds */
-#define FLOSS_LANDMARK_S 10U    /*!< Size of the FLOSS landmark in seconds */
+#define SAMPLING_RATE_HZ 250U /*!< Sampling rate of the reader task */
+#define WINDOW_SIZE 100U      /*!< Size of the sliding window */
+#define HISTORY_SIZE_S 20U    /*!< Size of the history buffer in seconds */
+#define FLOSS_LANDMARK_S 10U  /*!< Size of the FLOSS landmark in seconds */
 
 #define SHORT_FILTER ((float)(SAMPLING_RATE_HZ) / 10.0F)
 #define WANDER_FILTER ((float)(SAMPLING_RATE_HZ) / 2.0F)

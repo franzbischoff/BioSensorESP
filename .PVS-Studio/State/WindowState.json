@@ -1,0 +1,21 @@
+{
+  "isDataChanged": true,
+  "filters": {
+    "code": "",
+    "message": "",
+    "files": "",
+    "level": [
+      3
+    ],
+    "isColumnFiltersVisible": true,
+    "isLevelFiltersVisible": true,
+    "isGroupFiltersVisible": true,
+    "type": [
+      "General",
+      "Optimization",
+      "AUTOSAR",
+      "OWASP"
+    ]
+  },
+  "loadableProcessIds": []
+}

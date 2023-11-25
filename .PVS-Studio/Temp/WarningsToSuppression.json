@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "warnings": [
+    {
+      "id": 317,
+      "falseAlarm": false,
+      "code": "V2501",
+      "level": 1,
+      "message": "Octal escape sequence '\\033' should not be used.",
+      "positions": [
+        {
+          "column": 1,
+          "endColumn": 1,
+          "line": 353,
+          "endLine": 353,
+          "file": "|?|/main.cpp",
+          "navigation": {
+            "currentLine": 524528056,
+            "previousLine": 167657862,
+            "nextLine": 125,
+            "columns": 0
+          }
+        }
+      ],
+      "projects": [],
+      "sastId": "MISRA-CPP-2-13-2"
+    }
+  ]
+}

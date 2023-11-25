@@ -45,7 +45,7 @@ RUN curl -sSL -o ${QEMU_FILE} ${QEMU_URL} \
   && tar -xf $QEMU_FILE -C /opt \
   && rm ${QEMU_FILE}
 
-RUN curl https://get.trunk.io -fsSL | bash -s -- -y
+# RUN curl https://get.trunk.io -fsSL | bash -s -- -y
 
 RUN curl https://raw.githubusercontent.com/petervanderdoes/gitflow-avh/develop/contrib/gitflow-installer.sh -fsSL | bash -s -- install stable
 
@@ -54,25 +54,21 @@ ENV PATH=/opt/qemu/bin:${PATH}
 RUN curl -sSL -o /usr/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 \
   && chmod 755 /usr/bin/hadolint
 
-RUN curl -sSL -o vale.tar.gz https://github.com/errata-ai/vale/releases/download/v2.28.0/vale_2.28.0_Linux_64-bit.tar.gz \
-  && tar -xf vale.tar.gz -C /usr/bin \
-  && rm vale.tar.gz
-
 RUN curl -sSL -o packages-microsoft-prod.deb "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb" \
   && dpkg -i packages-microsoft-prod.deb \
   && rm packages-microsoft-prod.deb
 
 RUN curl -fsSL https://files.pvs-studio.com/etc/pubkey.txt  | apt-key add - \
- && curl -sSL -o /etc/apt/sources.list.d/viva64.list https://files.pvs-studio.com/etc/viva64.list \
- && apt-get update \
- && apt-get install -y -q --no-install-recommends \
+  && curl -sSL -o /etc/apt/sources.list.d/viva64.list https://files.pvs-studio.com/etc/viva64.list \
+  && apt-get update \
+  && apt-get install -y -q --no-install-recommends \
   pvs-studio \
   strace \
+  sudo \
   && rm -rf /var/lib/apt/lists/*
 
 # academic work
 RUN pvs-studio-analyzer credentials PVS-Studio Free FREE-FREE-FREE-FREE
-
 
 # installed dotnet for Astyle plugin. You'll get some warning about missing dotnet, but you can ignore it
 # RUN wget --no-verbose https://dot.net/v1/dotnet-install.sh \
@@ -83,7 +79,7 @@ RUN pvs-studio-analyzer credentials PVS-Studio Free FREE-FREE-FREE-FREE
 # RUN pip install --no-cache-dir -r /opt/esp/idf/docs/requirements.txt
 
 RUN echo "source /opt/esp/idf/export.sh > /dev/null 2>&1" >> ~/.bashrc \
-  && updatedb
+&& updatedb
 
 ## idf_tools.py install xtensa-clang
 

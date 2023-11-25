@@ -25,7 +25,7 @@ namespace mp {
 
 #ifdef ESP_PLATFORM
     #if defined(configUSE_FREERTOS_PROVIDED_HEAP)
-        #define pvPortCalloc(X, Y) pvPortMalloc(X *Y)
+        #define pvPortCalloc(X, Y) pvPortMalloc((X) * (Y))
     #else
         #define pvPortCalloc calloc
     #endif

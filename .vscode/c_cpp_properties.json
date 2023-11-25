@@ -1,0 +1,26 @@
+{
+  "configurations": [
+    {
+      "name": "ESP-IDF",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/build/**",
+        "${config:idf.espIdfPath}/components/**"
+      ],
+      "browse": {
+        "limitSymbolsToIncludedHeaders": false,
+        "path": [
+          "${config:idf.espIdfPath}/components",
+          "${workspaceFolder}/build",
+          "${workspaceFolder}"
+        ]
+      },
+      "compilerPath": "${config:idf.toolsPath}/tools/xtensa-esp32-elf/esp-12.2.0_20230208/xtensa-esp32-elf/bin/xtensa-esp32-elf-gcc",
+      // "compilerArgs": ["-fms-extensions", "-fms-compatibility", "-Wno-error=extra-tokens"],
+      // "compilerPath": "${config:idf.toolsPath}/tools/esp-clang/15.0.0-23786128ae/esp-clang/bin/clang",
+      // "configurationProvider": "ms-vscode.cmake-tools",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+    }
+  ],
+  "version": 4
+}

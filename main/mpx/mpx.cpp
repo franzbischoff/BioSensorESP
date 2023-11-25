@@ -217,7 +217,7 @@ void Mpx::_floss_iac()
     mpi = ((uint16_t *)pvPortCalloc(this->_profile_len + 1U, sizeof(uint16_t)));
 
     if (mpi == nullptr) {
-        LOG_DEBUG(TAG, "Memory allocation failed");
+        LOG_DEBUG(TAG, "Memory allocation failed"); //-V2507
         return;
     }
 
@@ -234,7 +234,7 @@ void Mpx::_floss_iac()
             uint16_t const j = mpi[i];
 
             if (j >= this->_profile_len) {
-                LOG_DEBUG(TAG, "j >= this->profile_len_");
+                LOG_DEBUG(TAG, "j >= this->profile_len_"); //-V2507
                 continue;
             }
             // RMP, i is always < j
